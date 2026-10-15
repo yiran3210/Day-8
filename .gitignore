@@ -1,0 +1,23 @@
+# Maven build outputs
+target/
+
+# IDE-specific files
+.idea/
+.vscode/
+*.iml
+.classpath
+.project
+.settings/
+
+# Private data
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.env
+/data/
+/backups/
+
+# System files
+.DS_Store
+Thumbs.db
