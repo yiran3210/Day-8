@@ -17,12 +17,14 @@ import javafx.scene.layout.HBox;
 import javafx.stage.Stage;
 
 import dev.personalagenda.model.Task;
+import dev.personalagenda.data.Database;
 
 public class App extends Application {
 
     @Override
-    public void start(Stage stage) {
+    public void start(Stage stage) throws Exception {
 
+        Database.initialize();
         List<Task> tasks = new ArrayList<>();
 
         Label title = new Label("Personal Agenda");
