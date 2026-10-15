@@ -2,6 +2,7 @@ package dev.personalagenda;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.sql.SQLException;
 
 import javafx.application.Application;
 import javafx.geometry.Insets;
@@ -18,6 +19,7 @@ import javafx.stage.Stage;
 
 import dev.personalagenda.model.Task;
 import dev.personalagenda.data.Database;
+import dev.personalagenda.data.TaskRepository;
 
 public class App extends Application {
 
@@ -25,6 +27,11 @@ public class App extends Application {
     public void start(Stage stage) throws Exception {
 
         Database.initialize();
+        TaskRepository repository = new TaskRepository();
+
+        System.out.println(
+                "Saved tasks to database: " + repository.findAll().size());
+
         List<Task> tasks = new ArrayList<>();
 
         Label title = new Label("Personal Agenda");
@@ -55,6 +62,14 @@ public class App extends Application {
 
             int minutes = durationInput.getValue();
             Task newTask = new Task(taskTitle, minutes);
+
+            try {
+                repository.insert(newTask);
+            } catch (SQLException e) {
+                e.printStackTrace();
+                return;
+            }
+
             tasks.add(newTask);
 
             CheckBox checkBox = new CheckBox(newTask.getTitle());

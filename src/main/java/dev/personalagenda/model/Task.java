@@ -10,10 +10,14 @@ public class Task {
     private boolean completed;
 
     public Task(String title, int estimatedMinutes) {
-        this.id = UUID.randomUUID().toString();
+        this(UUID.randomUUID().toString(), title, estimatedMinutes, false);
+    }
+
+    public Task(String id, String title, int estimatedMinutes, boolean completed) {
+        this.id = id;
         this.title = title;
         this.estimatedMinutes = estimatedMinutes;
-        this.completed = false;
+        this.completed = completed;
     }
 
     public String getId() {
