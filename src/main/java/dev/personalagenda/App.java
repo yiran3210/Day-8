@@ -32,7 +32,7 @@ public class App extends Application {
         System.out.println(
                 "Saved tasks to database: " + repository.findAll().size());
 
-        List<Task> tasks = new ArrayList<>();
+        List<Task> tasks = repository.findAll();
 
         Label title = new Label("Personal Agenda");
 
@@ -51,6 +51,15 @@ public class App extends Application {
 
         ProgressBar progressBar = new ProgressBar(0);
         progressBar.setPrefWidth(400);
+
+        for (Task savedTask : tasks) {
+
+            HBox taskRow = createTaskRow(savedTask, tasks, taskList, progressLabel, progressBar);
+
+            taskList.getChildren().add(taskRow);
+        }
+
+        updateProgress(tasks, progressLabel, progressBar);
 
         addButton.setOnAction(event -> {
 
@@ -72,25 +81,11 @@ public class App extends Application {
 
             tasks.add(newTask);
 
-            CheckBox checkBox = new CheckBox(newTask.getTitle());
-            Label durationLabel = new Label(minutes + " min");
-            Button deleteButton = new Button("x");
-
-            HBox taskRow = new HBox(
-                    12, checkBox, durationLabel, deleteButton);
-
-            checkBox.setOnAction(e -> {
-                newTask.setCompleted(checkBox.isSelected());
-                updateProgress(tasks, progressLabel, progressBar);
-            });
-
-            deleteButton.setOnAction(e -> {
-                tasks.remove(newTask);
-                taskList.getChildren().remove(taskRow);
-                updateProgress(tasks, progressLabel, progressBar);
-            });
+            HBox taskRow = createTaskRow(
+                    newTask, tasks, taskList, progressLabel, progressBar);
 
             taskList.getChildren().add(taskRow);
+
             taskInput.clear();
 
             updateProgress(tasks, progressLabel, progressBar);
@@ -112,6 +107,37 @@ public class App extends Application {
         stage.setScene(scene);
         stage.show();
 
+    }
+
+    private HBox createTaskRow(
+            Task task,
+            List<Task> tasks,
+            VBox taskList,
+            Label progressLabel,
+            ProgressBar progressBar) {
+
+        CheckBox checkBox = new CheckBox(task.getTitle());
+        checkBox.setSelected(task.isCompleted());
+
+        Label durationLabel = new Label(task.getEstimatedMinutes() + " min");
+
+        Button deleteButton = new Button("x");
+
+        HBox taskRow = new HBox(
+                12, checkBox, durationLabel, deleteButton);
+
+        checkBox.setOnAction(e -> {
+            task.setCompleted(checkBox.isSelected());
+            updateProgress(tasks, progressLabel, progressBar);
+        });
+
+        deleteButton.setOnAction(e -> {
+            tasks.remove(task);
+            taskList.getChildren().remove(taskRow);
+            updateProgress(tasks, progressLabel, progressBar);
+        });
+
+        return taskRow;
     }
 
     private void updateProgress(List<Task> tasks, Label progressLabel, ProgressBar progressBar) {
