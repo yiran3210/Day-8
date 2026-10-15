@@ -54,7 +54,7 @@ public class App extends Application {
 
         for (Task savedTask : tasks) {
 
-            HBox taskRow = createTaskRow(savedTask, tasks, taskList, progressLabel, progressBar);
+            HBox taskRow = createTaskRow(savedTask, tasks, taskList, progressLabel, progressBar, repository);
 
             taskList.getChildren().add(taskRow);
         }
@@ -82,7 +82,7 @@ public class App extends Application {
             tasks.add(newTask);
 
             HBox taskRow = createTaskRow(
-                    newTask, tasks, taskList, progressLabel, progressBar);
+                    newTask, tasks, taskList, progressLabel, progressBar, repository);
 
             taskList.getChildren().add(taskRow);
 
@@ -114,7 +114,8 @@ public class App extends Application {
             List<Task> tasks,
             VBox taskList,
             Label progressLabel,
-            ProgressBar progressBar) {
+            ProgressBar progressBar,
+            TaskRepository repository) {
 
         CheckBox checkBox = new CheckBox(task.getTitle());
         checkBox.setSelected(task.isCompleted());
@@ -127,14 +128,32 @@ public class App extends Application {
                 12, checkBox, durationLabel, deleteButton);
 
         checkBox.setOnAction(e -> {
-            task.setCompleted(checkBox.isSelected());
-            updateProgress(tasks, progressLabel, progressBar);
+
+            boolean completed = checkBox.isSelected();
+
+            try {
+                repository.updateCompleted(task.getId(), completed);
+
+                task.setCompleted(completed);
+                updateProgress(tasks, progressLabel, progressBar);
+            } catch (SQLException ex) {
+                checkBox.setSelected(task.isCompleted());
+                ex.printStackTrace();
+            }
         });
 
         deleteButton.setOnAction(e -> {
-            tasks.remove(task);
-            taskList.getChildren().remove(taskRow);
-            updateProgress(tasks, progressLabel, progressBar);
+
+            try {
+                repository.delete(task.getId());
+
+                tasks.remove(task);
+                taskList.getChildren().remove(taskRow);
+
+                updateProgress(tasks, progressLabel, progressBar);
+            } catch (SQLException ex) {
+                ex.printStackTrace();
+            }
         });
 
         return taskRow;

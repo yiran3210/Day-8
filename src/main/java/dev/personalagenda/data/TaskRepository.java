@@ -59,4 +59,37 @@ public class TaskRepository {
 
         return tasks;
     }
+
+    public void updateCompleted(String id, boolean completed) throws SQLException {
+
+        String sql = """
+                UPDATE tasks
+                SET completed = ?
+                WHERE id = ?
+                """;
+
+        try (Connection conn = Database.connect();
+                PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setInt(1, completed ? 1 : 0);
+            stmt.setString(2, id);
+
+            stmt.executeUpdate();
+        }
+    }
+
+    public void delete(String id) throws SQLException {
+
+        String sql = """
+                DELETE FROM tasks
+                WHERE id = ?
+                """;
+
+        try (Connection conn = Database.connect();
+                PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setString(1, id);
+            stmt.executeUpdate();
+        }
+    }
 }
