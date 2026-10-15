@@ -1,6 +1,7 @@
 package dev.personalagenda.model;
 
 import java.util.UUID;
+import java.time.LocalDate;
 
 public class Task {
 
@@ -8,6 +9,7 @@ public class Task {
     private final String title;
     private final int estimatedMinutes;
     private boolean completed;
+    private LocalDate plannedDate;
 
     public Task(String title, int estimatedMinutes) {
         this(UUID.randomUUID().toString(), title, estimatedMinutes, false);
@@ -38,5 +40,13 @@ public class Task {
 
     public void setCompleted(boolean completed) {
         this.completed = completed;
+    }
+
+    public LocalDate getPlannedDate() {
+        return plannedDate;
+    }
+
+    public void setPlannedDate(LocalDate plannedDate) {
+        this.plannedDate = plannedDate;
     }
 }
