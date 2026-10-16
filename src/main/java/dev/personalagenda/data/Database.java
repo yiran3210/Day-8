@@ -89,6 +89,22 @@ public class Database {
                         ('Personal', '#E4EAF0')
                     """);
 
+            statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS task_steps (
+                        id TEXT PRIMARY KEY,
+                        task_id TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        estimated_minutes INTEGER NOT NULL CHECK(estimated_minutes > 0),
+                        completed INTEGER NOT NULL DEFAULT 0,
+                        completed_at TEXT
+                    )
+                    """);
+
+            statement.executeUpdate("""
+                    CREATE INDEX IF NOT EXISTS idx_task_steps_task_id
+                    ON task_steps(task_id)
+                    """);
+
         }
 
         System.out.println("Database initialized: " + DB_PATH);
