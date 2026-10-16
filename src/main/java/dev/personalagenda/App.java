@@ -3,6 +3,7 @@ package dev.personalagenda;
 import java.util.ArrayList;
 import java.util.List;
 import java.sql.SQLException;
+import java.time.LocalDate;
 
 import javafx.application.Application;
 import javafx.geometry.Insets;
@@ -14,6 +15,7 @@ import javafx.scene.control.TextField;
 import javafx.scene.control.Button;
 import javafx.scene.control.Spinner;
 import javafx.scene.control.ProgressBar;
+import javafx.scene.control.DatePicker;
 import javafx.scene.layout.HBox;
 import javafx.stage.Stage;
 
@@ -44,8 +46,15 @@ public class App extends Application {
         VBox taskList = new VBox(8);
 
         Spinner<Integer> durationInput = new Spinner<>(15, 480, 60, 15);
-
         durationInput.setPrefWidth(100);
+
+        DatePicker plannedDateInput = new DatePicker(LocalDate.now());
+        plannedDateInput.setPrefWidth(150);
+
+        Button backlogButton = new Button("Backlog");
+        backlogButton.setOnAction(event -> {
+            plannedDateInput.setValue(null);
+        });
 
         Label progressLabel = new Label("0 / 0 completed");
 
@@ -71,6 +80,7 @@ public class App extends Application {
 
             int minutes = durationInput.getValue();
             Task newTask = new Task(taskTitle, minutes);
+            newTask.setPlannedDate(plannedDateInput.getValue());
 
             try {
                 repository.insert(newTask);
@@ -96,8 +106,11 @@ public class App extends Application {
         HBox inputRow = new HBox(
                 10, taskInput, durationInput, addButton);
 
+        HBox dateRow = new HBox(
+                10, new Label("Planned date:"), plannedDateInput, backlogButton);
+
         VBox layout = new VBox(
-                16, title, inputRow, taskList, progressLabel, progressBar);
+                16, title, inputRow, dateRow, taskList, progressLabel, progressBar);
         layout.setPadding(new Insets(24));
 
         Scene scene = new Scene(
@@ -122,10 +135,13 @@ public class App extends Application {
 
         Label durationLabel = new Label(task.getEstimatedMinutes() + " min");
 
+        Label dateLabel = new Label(
+                task.getPlannedDate() == null ? "Backlog" : task.getPlannedDate().toString());
+
         Button deleteButton = new Button("x");
 
         HBox taskRow = new HBox(
-                12, checkBox, durationLabel, deleteButton);
+                12, checkBox, durationLabel, dateLabel, deleteButton);
 
         checkBox.setOnAction(e -> {
 
