@@ -86,7 +86,8 @@ public class TimeBlockRepository {
 
         String sql = """
                 UPDATE time_blocks
-                SET title = ?, start_time = ?, end_time = ?, type = ?
+                SET title = ?, start_time = ?, end_time = ?,
+                    type = ?, task_id = ?
                 WHERE id = ?
                 """;
 
@@ -97,7 +98,8 @@ public class TimeBlockRepository {
             stmt.setString(2, block.start().toString());
             stmt.setString(3, block.end().toString());
             stmt.setString(4, block.type().name());
-            stmt.setString(5, block.id());
+            stmt.setString(5, block.taskId());
+            stmt.setString(6, block.id());
 
             stmt.executeUpdate();
         }

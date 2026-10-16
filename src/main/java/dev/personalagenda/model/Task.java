@@ -49,4 +49,9 @@ public class Task {
     public void setPlannedDate(LocalDate plannedDate) {
         this.plannedDate = plannedDate;
     }
+
+    @Override
+    public String toString() {
+        return getTitle();
+    }
 }

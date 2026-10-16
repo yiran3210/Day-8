@@ -6,10 +6,13 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 
 import javafx.animation.Timeline;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.ProgressBar;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
@@ -20,194 +23,246 @@ import javafx.animation.Timeline;
 
 public class TimelineView extends VBox {
 
-    private static final double HOUR_HEIGHT = 40;
-    private final Pane canvas = new Pane();
+        private static final double HOUR_HEIGHT = 40;
+        private final Pane canvas = new Pane();
+        private final ProgressBar currentTimeProgress = new ProgressBar(0);
 
-    private LocalDate displayedDate;
-    private List<TimeBlock> displayedBlocks = List.of();
+        private LocalDate displayedDate;
+        private List<TimeBlock> displayedBlocks = List.of();
+        private Map<String, String> taskColors = new HashMap<>();
 
-    private final Label currentStatus = new Label();
-    private final Label nextStatus = new Label();
+        private final Label currentStatus = new Label();
+        private final Label nextStatus = new Label();
 
-    private final Line nowLine = new Line();
+        private final Line nowLine = new Line();
 
-    public TimelineView() {
-
-        nowLine.endXProperty().bind(
-                canvas.widthProperty().subtract(10));
-
-        Label heading = new Label("24h Schedule");
-
-        canvas.setPrefSize(320, 24 * HOUR_HEIGHT + 20);
-        canvas.setMinWidth(0);
-
-        ScrollPane scrollPane = new ScrollPane(canvas);
-        scrollPane.setFitToWidth(true);
-        scrollPane.setHbarPolicy(
-                ScrollPane.ScrollBarPolicy.NEVER);
-
-        VBox.setVgrow(scrollPane, Priority.ALWAYS);
-
-        setSpacing(10);
-        setPrefWidth(360);
-        setMinWidth(240);
-
-        currentStatus.setWrapText(true);
-        nextStatus.setWrapText(true);
-
-        getChildren().addAll(heading, currentStatus, nextStatus, scrollPane);
-
-        Timeline clock = new Timeline(
-                new KeyFrame(javafx.util.Duration.seconds(30), event -> updateNow()));
-
-        clock.setCycleCount(Timeline.INDEFINITE);
-        clock.play();
-    }
-
-    public void showDate(LocalDate date, List<TimeBlock> blocks) {
-
-        canvas.getChildren().clear();
-
-        displayedDate = date;
-        displayedBlocks = blocks;
-
-        for (int hour = 0; hour <= 24; hour++) {
-
-            double y = hour * HOUR_HEIGHT;
-
-            Label timeLabel = new Label(
-                    String.format("%02d:00", hour));
-
-            timeLabel.setLayoutX(4);
-            timeLabel.setLayoutY(y);
-
-            Line line = new Line(56, y, 280, y);
-            line.endXProperty().bind(
-                    canvas.widthProperty().subtract(10));
-
-            line.setStroke(Color.LIGHTGRAY);
-
-            canvas.getChildren().addAll(timeLabel, line);
+        public void setTaskColors(Map<String, String> colors) {
+                taskColors = new HashMap<>(colors);
         }
 
-        LocalDateTime dayStart = date.atStartOfDay();
-        LocalDateTime dayEnd = date.plusDays(1).atStartOfDay();
+        public TimelineView() {
 
-        for (TimeBlock block : blocks) {
+                nowLine.endXProperty().bind(
+                                canvas.widthProperty().subtract(10));
 
-            LocalDateTime start = block.start().isBefore(dayStart)
-                    ? dayStart
-                    : block.start();
+                Label heading = new Label("24h Schedule");
 
-            LocalDateTime end = block.end().isAfter(dayEnd)
-                    ? dayEnd
-                    : block.end();
+                canvas.setPrefSize(320, 24 * HOUR_HEIGHT + 20);
+                canvas.setMinWidth(0);
 
-            if (!end.isAfter(start)) {
-                continue;
-            }
+                ScrollPane scrollPane = new ScrollPane(canvas);
+                scrollPane.setFitToWidth(true);
+                scrollPane.setHbarPolicy(
+                                ScrollPane.ScrollBarPolicy.NEVER);
 
-            double startMinutes = Duration.between(dayStart, start).toMinutes();
+                VBox.setVgrow(scrollPane, Priority.ALWAYS);
 
-            double durationMinutes = Duration.between(start, end).toMinutes();
+                setSpacing(10);
+                setPrefWidth(360);
+                setMinWidth(240);
 
-            double y = startMinutes / 60 * HOUR_HEIGHT;
-            double height = durationMinutes / 60 * HOUR_HEIGHT;
-            Label eventLabel = new Label(
-                    block.title() + "\n" +
-                            block.start().toLocalTime()
-                            + " – " + block.end().toLocalTime());
+                currentStatus.setWrapText(true);
+                nextStatus.setWrapText(true);
 
-            eventLabel.setLayoutX(64);
-            eventLabel.setLayoutY(y);
-            eventLabel.setPrefHeight(height);
+                currentTimeProgress.setMaxWidth(Double.MAX_VALUE);
+                currentTimeProgress.setPrefHeight(10);
+                currentTimeProgress.setVisible(false);
+                currentTimeProgress.setManaged(false);
 
-            eventLabel.prefWidthProperty().bind(
-                    canvas.widthProperty().subtract(72));
-            eventLabel.setMinHeight(0);
-            eventLabel.setWrapText(true);
+                getChildren().addAll(
+                                heading,
+                                currentStatus,
+                                currentTimeProgress,
+                                nextStatus,
+                                scrollPane);
 
-            String typeStyle = switch (block.type()) {
-                case TASK -> "time-block-task";
-                case FIXED -> "time-block-fixed";
-                case REST -> "time-block-rest";
-                case FREE -> "time-block-free";
-            };
+                Timeline clock = new Timeline(
+                                new KeyFrame(javafx.util.Duration.seconds(30), event -> updateNow()));
 
-            eventLabel.getStyleClass().addAll(
-                    "time-block",
-                    typeStyle);
-
-            canvas.getChildren().add(eventLabel);
-        }
-        updateNow();
-    }
-
-    private void updateNow() {
-
-        if (displayedDate == null) {
-            return;
+                clock.setCycleCount(Timeline.INDEFINITE);
+                clock.play();
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        public void showDate(LocalDate date, List<TimeBlock> blocks) {
 
-        canvas.getChildren().remove(nowLine);
+                canvas.getChildren().clear();
 
-        if (!now.toLocalDate().equals(displayedDate)) {
-            currentStatus.setText("Viewing: " + displayedDate);
-            nextStatus.setText("");
-            return;
+                displayedDate = date;
+                displayedBlocks = blocks;
+
+                for (int hour = 0; hour <= 24; hour++) {
+
+                        double y = hour * HOUR_HEIGHT;
+
+                        Label timeLabel = new Label(
+                                        String.format("%02d:00", hour));
+
+                        timeLabel.setLayoutX(4);
+                        timeLabel.setLayoutY(y);
+
+                        Line line = new Line(56, y, 280, y);
+                        line.endXProperty().bind(
+                                        canvas.widthProperty().subtract(10));
+
+                        line.setStroke(Color.LIGHTGRAY);
+
+                        canvas.getChildren().addAll(timeLabel, line);
+                }
+
+                LocalDateTime dayStart = date.atStartOfDay();
+                LocalDateTime dayEnd = date.plusDays(1).atStartOfDay();
+
+                for (TimeBlock block : blocks) {
+
+                        LocalDateTime start = block.start().isBefore(dayStart)
+                                        ? dayStart
+                                        : block.start();
+
+                        LocalDateTime end = block.end().isAfter(dayEnd)
+                                        ? dayEnd
+                                        : block.end();
+
+                        if (!end.isAfter(start)) {
+                                continue;
+                        }
+
+                        double startMinutes = Duration.between(dayStart, start).toMinutes();
+
+                        double durationMinutes = Duration.between(start, end).toMinutes();
+
+                        double y = startMinutes / 60 * HOUR_HEIGHT;
+                        double height = durationMinutes / 60 * HOUR_HEIGHT;
+                        Label eventLabel = new Label(
+                                        block.title() + "\n" +
+                                                        block.start().toLocalTime()
+                                                        + " – " + block.end().toLocalTime());
+
+                        eventLabel.setLayoutX(64);
+                        eventLabel.setLayoutY(y);
+                        eventLabel.setPrefHeight(height);
+
+                        eventLabel.prefWidthProperty().bind(
+                                        canvas.widthProperty().subtract(72));
+                        eventLabel.setMinHeight(0);
+                        eventLabel.setWrapText(true);
+
+                        String typeStyle = switch (block.type()) {
+                                case TASK -> "time-block-task";
+                                case FIXED -> "time-block-fixed";
+                                case REST -> "time-block-rest";
+                                case FREE -> "time-block-free";
+                        };
+
+                        eventLabel.getStyleClass().addAll(
+                                        "time-block",
+                                        typeStyle);
+
+                        String categoryColor = block.taskId() == null
+                                        ? null
+                                        : taskColors.get(block.taskId());
+
+                        if (block.type() == TimeBlock.Type.TASK
+                                        && categoryColor != null) {
+
+                                Color background = Color.web(categoryColor);
+
+                                double brightness = background.getRed() * 0.2126
+                                                + background.getGreen() * 0.7152
+                                                + background.getBlue() * 0.0722;
+
+                                String textColor = brightness > 0.55
+                                                ? "#26354A"
+                                                : "#FFFFFF";
+
+                                eventLabel.setStyle(
+                                                "-fx-background-color: " + categoryColor + ";"
+                                                                + "-fx-text-fill: " + textColor + ";");
+                        }
+
+                        canvas.getChildren().add(eventLabel);
+                }
+                updateNow();
         }
 
-        double minutes = now.getHour() * 60
-                + now.getMinute()
-                + now.getSecond() / 60.0;
+        private void updateNow() {
 
-        double y = minutes / 60.0 * HOUR_HEIGHT;
+                if (displayedDate == null) {
+                        return;
+                }
 
-        nowLine.setStartX(56);
-        nowLine.setStartY(y);
-        nowLine.setEndY(y);
-        nowLine.setStroke(Color.web("#893030"));
-        nowLine.setStrokeWidth(2);
+                LocalDateTime now = LocalDateTime.now();
 
-        canvas.getChildren().add(nowLine);
+                canvas.getChildren().remove(nowLine);
 
-        TimeBlock current = null;
-        TimeBlock next = null;
+                currentTimeProgress.setVisible(false);
+                currentTimeProgress.setManaged(false);
 
-        for (TimeBlock block : displayedBlocks) {
+                if (!now.toLocalDate().equals(displayedDate)) {
+                        currentStatus.setText("Viewing: " + displayedDate);
+                        nextStatus.setText("");
+                        return;
+                }
 
-            if (!now.isBefore(block.start()) && now.isBefore(block.end())) {
+                double minutes = now.getHour() * 60
+                                + now.getMinute()
+                                + now.getSecond() / 60.0;
 
-                current = block;
+                double y = minutes / 60.0 * HOUR_HEIGHT;
 
-            } else if (block.start().isAfter(now) && (next == null || block.start().isBefore(next.start()))) {
-                next = block;
-            }
+                nowLine.setStartX(56);
+                nowLine.setStartY(y);
+                nowLine.setEndY(y);
+                nowLine.setStroke(Color.web("#893030"));
+                nowLine.setStrokeWidth(2);
+
+                canvas.getChildren().add(nowLine);
+
+                TimeBlock current = null;
+                TimeBlock next = null;
+
+                for (TimeBlock block : displayedBlocks) {
+
+                        if (!now.isBefore(block.start()) && now.isBefore(block.end())) {
+
+                                current = block;
+
+                        } else if (block.start().isAfter(now)
+                                        && (next == null || block.start().isBefore(next.start()))) {
+                                next = block;
+                        }
+                }
+                if (current == null) {
+                        currentStatus.setText("Current: Unscheduled");
+                } else {
+
+                        double elapsed = Duration.between(
+                                        current.start(), now).toSeconds();
+
+                        double total = Duration.between(
+                                        current.start(), current.end()).toSeconds();
+                        int percent = (int) Math.round(
+                                        100.0 * elapsed / total);
+
+                        currentTimeProgress.setProgress(
+                                        Math.max(0, Math.min(1, elapsed / total)));
+
+                        currentTimeProgress.setVisible(true);
+                        currentTimeProgress.setManaged(true);
+
+                        long remainingMinutes = (long) Math.ceil(
+                                        Duration.between(now, current.end()).toSeconds() / 60.0);
+
+                        currentStatus.setText(
+                                        "Current: " + current.title()
+                                                        + " | " + percent + "% elapsed"
+                                                        + " | " + remainingMinutes + " min left");
+                }
+
+                if (next == null) {
+                        nextStatus.setText("Next: No further activities");
+                } else {
+                        nextStatus.setText(
+                                        "Next: " + next.title() + " | " + next.start().toLocalTime());
+                }
         }
-        if (current == null) {
-            currentStatus.setText("Current: Unscheduled");
-        } else {
-
-            double elapsed = Duration.between(
-                    current.start(), now).toSeconds();
-
-            double total = Duration.between(
-                    current.start(), current.end()).toSeconds();
-            int percent = (int) Math.round(
-                    100.0 * elapsed / total);
-
-            currentStatus.setText(
-                    "Current: " + current.title()
-                            + " | " + percent + "% elapsed");
-        }
-
-        if (next == null) {
-            nextStatus.setText("Next: No further activities");
-        } else {
-            nextStatus.setText(
-                    "Next: " + next.title() + " | " + next.start().toLocalTime());
-        }
-    }
 }
