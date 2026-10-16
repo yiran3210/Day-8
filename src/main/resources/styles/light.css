@@ -396,3 +396,108 @@
     -fx-background-radius: 10px;
     -fx-padding: 10px;
 }
+
+
+/* ===== Typography hierarchy ===== */
+
+.section-title {
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #26364A;
+}
+
+.task-composer>.label {
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+}
+
+.task-row .check-box {
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #26364A;
+}
+
+.task-steps .label {
+    -fx-font-size: 12px;
+    -fx-text-fill: #526478;
+}
+
+.mini-widget {
+    -fx-font-size: 12px;
+}
+
+.mini-section-title {
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+}
+
+.mini-stat {
+    -fx-font-size: 11px;
+    -fx-text-fill: #64748B;
+}
+
+/* Compact activity editor */
+.titled-pane>.title {
+    -fx-background-color: #E9EEF6;
+    -fx-background-radius: 10px;
+    -fx-padding: 10px 12px;
+}
+
+.titled-pane>.content {
+    -fx-background-color: #FFFFFF;
+    -fx-border-color: #E7ECF3;
+}
+
+
+/* ===== Typography v2 ===== */
+
+/* Section headings */
+.section-heading,
+.section-title {
+    -fx-font-family: "Segoe UI";
+    -fx-font-size: 17px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #1D3048;
+}
+
+/* Main task title */
+.task-row .task-title,
+.task-row .task-title:disabled {
+    -fx-font-family: "Segoe UI";
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #1E3047;
+    -fx-opacity: 1.0;
+}
+
+/* General content */
+.label {
+    -fx-text-fill: #334155;
+}
+
+/* Secondary information */
+.task-steps .label {
+    -fx-font-size: 12px;
+    -fx-text-fill: #64748B;
+}
+
+/* Input text */
+.text-field,
+.combo-box,
+.date-picker {
+    -fx-font-size: 13px;
+}
+
+/* Foldable activity form */
+.titled-pane>.title {
+    -fx-background-color: #EDF2F8;
+    -fx-background-radius: 10px;
+    -fx-padding: 10px 14px;
+}
+
+.titled-pane>.content {
+    -fx-background-color: #FFFFFF;
+    -fx-border-color: #E6EBF2;
+    -fx-border-radius: 0 0 10px 10px;
+    -fx-padding: 12px;
+}

@@ -10,9 +10,15 @@ import java.util.Map;
 import java.util.HashMap;
 
 import javafx.animation.Timeline;
+import javafx.application.Platform;
+import javafx.scene.control.Button;
+import javafx.scene.input.ScrollEvent;
+import javafx.scene.input.MouseEvent;
+import javafx.scene.Node;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.ProgressBar;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
@@ -25,6 +31,12 @@ public class TimelineView extends VBox {
 
         private static final double HOUR_HEIGHT = 40;
         private final Pane canvas = new Pane();
+
+        private final ScrollPane scrollPane = new ScrollPane(canvas);
+        private final Button nowButton = new Button("Now");
+
+        private boolean autoFollow = true;
+
         private final ProgressBar currentTimeProgress = new ProgressBar(0);
 
         private LocalDate displayedDate;
@@ -47,10 +59,16 @@ public class TimelineView extends VBox {
 
                 Label heading = new Label("24h Schedule");
 
+                HBox headingRow = new HBox(12, heading, nowButton);
+
+                nowButton.setOnAction(event -> {
+                        autoFollow = true;
+                        scrollToNow();
+                });
+
                 canvas.setPrefSize(320, 24 * HOUR_HEIGHT + 20);
                 canvas.setMinWidth(0);
 
-                ScrollPane scrollPane = new ScrollPane(canvas);
                 scrollPane.setFitToWidth(true);
                 scrollPane.setHbarPolicy(
                                 ScrollPane.ScrollBarPolicy.NEVER);
@@ -70,11 +88,39 @@ public class TimelineView extends VBox {
                 currentTimeProgress.setManaged(false);
 
                 getChildren().addAll(
-                                heading,
+                                headingRow,
                                 currentStatus,
                                 currentTimeProgress,
                                 nextStatus,
                                 scrollPane);
+
+                // Pause following when the user scrolls manually.
+                scrollPane.addEventFilter(
+                                ScrollEvent.SCROLL,
+                                event -> autoFollow = false);
+
+                // Also detect manual scrollbar dragging.
+                scrollPane.addEventFilter(
+                                MouseEvent.MOUSE_PRESSED,
+                                event -> {
+                                        Node node = event.getPickResult().getIntersectedNode();
+
+                                        while (node != null && node != scrollPane) {
+                                                if (node.getStyleClass().contains("scroll-bar")) {
+                                                        autoFollow = false;
+                                                        break;
+                                                }
+                                                node = node.getParent();
+                                        }
+                                });
+
+                // Reposition when the viewport obtains its actual size.
+                scrollPane.viewportBoundsProperty().addListener(
+                                (obs, oldBounds, newBounds) -> {
+                                        if (autoFollow) {
+                                                Platform.runLater(this::scrollToNow);
+                                        }
+                                });
 
                 Timeline clock = new Timeline(
                                 new KeyFrame(javafx.util.Duration.seconds(30), event -> updateNow()));
@@ -87,8 +133,14 @@ public class TimelineView extends VBox {
 
                 canvas.getChildren().clear();
 
+                if (!date.equals(displayedDate)) {
+                        autoFollow = date.equals(LocalDate.now());
+                }
+
                 displayedDate = date;
                 displayedBlocks = blocks;
+
+                nowButton.setDisable(!date.equals(LocalDate.now()));
 
                 for (int hour = 0; hour <= 24; hour++) {
 
@@ -182,6 +234,10 @@ public class TimelineView extends VBox {
                         canvas.getChildren().add(eventLabel);
                 }
                 updateNow();
+
+                if (autoFollow) {
+                        Platform.runLater(this::scrollToNow);
+                }
         }
 
         private void updateNow() {
@@ -264,5 +320,47 @@ public class TimelineView extends VBox {
                         nextStatus.setText(
                                         "Next: " + next.title() + " | " + next.start().toLocalTime());
                 }
+
+                if (autoFollow) {
+                        scrollToNow();
+                }
         }
+
+        private void scrollToNow() {
+
+                if (displayedDate == null
+                                || !displayedDate.equals(LocalDate.now())) {
+                        return;
+                }
+
+                double viewportHeight = scrollPane.getViewportBounds().getHeight();
+
+                if (viewportHeight <= 0) {
+                        return;
+                }
+
+                double nowMinutes = java.time.LocalTime.now().toSecondOfDay() / 60.0;
+
+                double nowY = nowMinutes / 60.0 * HOUR_HEIGHT;
+
+                double contentHeight = Math.max(
+                                canvas.getHeight(),
+                                canvas.getPrefHeight());
+
+                double scrollableHeight = contentHeight - viewportHeight;
+
+                if (scrollableHeight <= 0) {
+                        return;
+                }
+
+                // Position NOW roughly 45% down the viewport.
+                double targetOffset = nowY - viewportHeight * 0.45;
+
+                double position = Math.max(
+                                0,
+                                Math.min(1, targetOffset / scrollableHeight));
+
+                scrollPane.setVvalue(position);
+        }
+
 }

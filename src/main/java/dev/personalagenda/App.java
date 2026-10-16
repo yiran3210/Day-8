@@ -28,6 +28,7 @@ import java.time.format.DateTimeParseException;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.CheckBox;
@@ -36,7 +37,9 @@ import javafx.scene.control.ColorPicker;
 import javafx.scene.control.Separator;
 import javafx.scene.control.MenuButton;
 import javafx.scene.control.MenuItem;
+import javafx.scene.control.OverrunStyle;
 import javafx.scene.control.TextField;
+import javafx.scene.control.TitledPane;
 import javafx.scene.control.Button;
 import javafx.scene.control.Spinner;
 import javafx.scene.control.ProgressBar;
@@ -159,6 +162,10 @@ public class App extends Application {
 
         progressLabel.setWrapText(true);
 
+        progressLabel.setMaxWidth(Double.MAX_VALUE);
+        progressLabel.setMinHeight(Region.USE_PREF_SIZE);
+        progressLabel.setTextOverrun(OverrunStyle.CLIP);
+
         progressBar.setMinHeight(12);
         progressBar.setPrefHeight(12);
         progressBar.setPrefWidth(320);
@@ -196,7 +203,7 @@ public class App extends Application {
             }
         });
 
-        Label scheduleTitle = new Label("Schedule");
+        Label scheduleTitle = new Label("Day Plan");
 
         HBox scheduleHeader = new HBox(12, scheduleTitle, scheduleDateInput);
 
@@ -266,12 +273,13 @@ public class App extends Application {
                     }
                 });
 
-        CheckBox nextDayInput = new CheckBox();
-        Label nextDayLabel = new Label("Ends next day (+1 day)");
+        CheckBox nextDayInput = new CheckBox("Ends next day (+1 day)");
 
-        HBox nextDayRow = new HBox(8, nextDayInput, nextDayLabel);
+        HBox nextDayRow = new HBox(8, nextDayInput);
+        nextDayRow.setAlignment(Pos.CENTER_LEFT);
 
-        Button saveBlockButton = new Button("Schedule");
+        Button saveBlockButton = new Button("Day Plan");
+        saveBlockButton.setText("Add Activity");
 
         Label blockStatus = new Label();
 
@@ -355,9 +363,54 @@ public class App extends Application {
         HBox blockInputRow = new HBox(
                 8, blockTitleInput, blockTypeInput, saveBlockButton);
 
+        startTimeInput.setPrefWidth(105);
+        endTimeInput.setPrefWidth(105);
+
+        startTimeInput.setMaxWidth(105);
+        endTimeInput.setMaxWidth(105);
+
+        blockTitleInput.setPrefWidth(230);
+        blockTitleInput.setMinWidth(140);
+
+        HBox.setHgrow(blockTitleInput, Priority.ALWAYS);
+
+        blockTypeInput.setPrefWidth(115);
+
+        linkedTaskInput.setPrefWidth(260);
+
+        VBox activityForm = new VBox(
+                10,
+                blockInputRow,
+                timeInputRow,
+                nextDayRow,
+                linkedTaskRow,
+                blockStatus);
+
+        TitledPane addActivityPane = new TitledPane(
+                "+ Add activity",
+                activityForm);
+
+        activityForm.setMaxHeight(Region.USE_PREF_SIZE);
+
+        addActivityPane.setMaxHeight(Region.USE_PREF_SIZE);
+
+        VBox.setVgrow(
+                addActivityPane,
+                Priority.NEVER);
+
+        addActivityPane.setExpanded(false);
+        addActivityPane.setAnimated(false);
+
+        Label activitiesTitle = new Label("Planned Activities");
+
+        activitiesTitle.getStyleClass().add("section-title");
+
         VBox scheduleEditor = new VBox(
-                8, scheduleHeader, timeInputRow, nextDayRow,
-                blockInputRow, linkedTaskRow, blockStatus, new Label("Scheduled Activities"), scheduledBlocks);
+                14,
+                scheduleHeader,
+                addActivityPane,
+                activitiesTitle,
+                scheduledBlocks);
 
         Label categoryTitle = new Label("Task Categories");
 
@@ -457,6 +510,9 @@ public class App extends Application {
         Label quickAddTitle = new Label("Quick Add");
         Label taskListTitle = new Label("Task List");
 
+        quickAddTitle.getStyleClass().add("section-heading");
+        taskListTitle.getStyleClass().add("section-heading");
+
         VBox taskComposer = new VBox(
                 10, quickAddTitle, inputRow, dateRow);
 
@@ -504,10 +560,10 @@ public class App extends Application {
         ScrollPane categoryScroll = new ScrollPane(categoryPanel);
         categoryScroll.setFitToWidth(true);
 
-        Tab taskTab = new Tab("Tasks", taskScroll);
+        Tab taskTab = new Tab("To-Do", taskScroll);
         taskTab.setClosable(false);
 
-        Tab scheduleTab = new Tab("Schedule", scheduleScroll);
+        Tab scheduleTab = new Tab("Day Plan", scheduleScroll);
         scheduleTab.setClosable(false);
 
         Tab categoryTab = new Tab("Projects", categoryScroll);
@@ -816,6 +872,9 @@ public class App extends Application {
             TaskRepository repository, String filter) {
 
         CheckBox checkBox = new CheckBox(task.getTitle());
+
+        checkBox.getStyleClass().add("task-title");
+
         checkBox.setSelected(task.isCompleted());
 
         Label durationLabel = new Label(task.getEstimatedMinutes() + " min");
