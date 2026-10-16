@@ -49,7 +49,7 @@ public class App extends Application {
         VBox taskList = new VBox(8);
 
         ComboBox<String> viewFilter = new ComboBox<>();
-        viewFilter.getItems().addAll("Today", "Tomorrow", "Backlog", "Earlier", "All");
+        viewFilter.getItems().addAll("Today", "Tomorrow", "Replan", "Backlog", "Earlier", "All");
         viewFilter.setValue("Today");
 
         Spinner<Integer> durationInput = new Spinner<>(15, 480, 60, 15);
@@ -141,6 +141,7 @@ public class App extends Application {
             case "Today" -> today.equals(date);
             case "Tomorrow" -> today.plusDays(1).equals(date);
             case "Backlog" -> date == null;
+            case "Replan" -> date != null && date.isBefore(today) && !task.isCompleted();
             case "Earlier" -> date != null && date.isBefore(today);
             case "All" -> true;
             default -> false;
@@ -223,7 +224,12 @@ public class App extends Application {
                 repository.updateCompleted(task.getId(), completed);
 
                 task.setCompleted(completed);
-                updateProgress(tasks, progressLabel, progressBar, filter);
+                if ("Replan".equals(filter)) {
+                    Platform.runLater(
+                            () -> refreshTaskList(tasks, taskList, progressLabel, progressBar, repository, filter));
+                } else {
+                    updateProgress(tasks, progressLabel, progressBar, filter);
+                }
             } catch (SQLException ex) {
                 checkBox.setSelected(task.isCompleted());
                 ex.printStackTrace();
