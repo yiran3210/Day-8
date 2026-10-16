@@ -100,6 +100,11 @@ public class FloatingWidget {
         // Daily progress: always visible in both tabs
         Label todayTitle = new Label("Today's Progress");
 
+        todayTitle.getStyleClass().add("mini-section-title");
+        dailyLabel.getStyleClass().add("mini-stat");
+        taskProgressLabel.getStyleClass().add("mini-stat");
+        projectExpectedLabel.getStyleClass().add("mini-stat");
+
         dailyBar.setColor(Color.web("#5F91BC"));
 
         VBox dailySection = new VBox(

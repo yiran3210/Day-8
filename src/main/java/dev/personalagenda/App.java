@@ -37,7 +37,6 @@ import javafx.scene.control.ColorPicker;
 import javafx.scene.control.Separator;
 import javafx.scene.control.MenuButton;
 import javafx.scene.control.MenuItem;
-import javafx.scene.layout.VBox;
 import javafx.scene.control.TextField;
 import javafx.scene.control.Button;
 import javafx.scene.control.Spinner;
@@ -48,6 +47,8 @@ import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SplitPane;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.VBox;
+import javafx.scene.layout.FlowPane;
 import javafx.scene.paint.Color;
 import javafx.stage.Stage;
 
@@ -855,6 +856,30 @@ public class App extends Application {
         }
 
         taskRow.getChildren().add(1, categoryButton);
+
+        checkBox.setWrapText(true);
+        checkBox.setMinWidth(0);
+        checkBox.setMaxWidth(Double.MAX_VALUE);
+
+        HBox titleLine = new HBox(
+                12, checkBox, categoryButton);
+
+        HBox.setHgrow(checkBox, Priority.ALWAYS);
+
+        FlowPane metadataLine = new FlowPane(
+                10, 6,
+                durationLabel,
+                taskDateInput,
+                clearDateButton,
+                deleteButton);
+
+        VBox rowContent = new VBox(
+                8, titleLine, metadataLine);
+
+        rowContent.setMaxWidth(Double.MAX_VALUE);
+
+        taskRow.getChildren().setAll(rowContent);
+        HBox.setHgrow(rowContent, Priority.ALWAYS);
 
         taskRow.getStyleClass().add("task-row");
 

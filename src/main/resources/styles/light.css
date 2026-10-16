@@ -259,3 +259,123 @@
 .mini-widget .tab-pane>.tab-header-area .tab-header-background {
     -fx-background-color: transparent;
 }
+
+
+/* ===== Visual Refinement v1 ===== */
+
+.root {
+    -fx-font-family: "Segoe UI";
+    -fx-font-size: 13px;
+    -fx-background-color: #F3F6FA;
+}
+
+/* Tab bar */
+.tab-pane>.tab-header-area>.tab-header-background {
+    -fx-background-color: transparent;
+}
+
+.tab-pane>.tab-header-area {
+    -fx-padding: 0 0 10 0;
+}
+
+.tab-pane>.tab-header-area>.headers-region>.tab {
+    -fx-background-color: #E8EDF5;
+    -fx-background-radius: 10 10 0 0;
+    -fx-padding: 8 17;
+}
+
+.tab-pane>.tab-header-area>.headers-region>.tab:selected {
+    -fx-background-color: #FFFFFF;
+}
+
+.tab-pane>.tab-content-area {
+    -fx-background-color: transparent;
+}
+
+/* Task cards */
+.task-row {
+    -fx-background-color: #F7F9FC;
+    -fx-background-radius: 12px;
+    -fx-padding: 12px;
+}
+
+.task-row .check-box {
+    -fx-text-fill: #26364A;
+    -fx-font-weight: 600;
+}
+
+.task-row .check-box:disabled {
+    -fx-opacity: 1;
+}
+
+.task-steps {
+    -fx-background-color: #F9FAFD;
+    -fx-background-radius: 0 0 12 12;
+    -fx-padding: 9 12 12 12;
+}
+
+/* Buttons */
+.button {
+    -fx-background-radius: 9px;
+    -fx-cursor: hand;
+}
+
+.button:focused,
+.tab:focused {
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+}
+
+/* Project cards */
+.project-card {
+    -fx-background-color: #FFFFFF;
+    -fx-background-radius: 14px;
+    -fx-border-color: #E7ECF3;
+    -fx-border-radius: 14px;
+    -fx-padding: 16px;
+}
+
+/* Split divider */
+.split-pane>.split-pane-divider {
+    -fx-background-color: #E4EAF2;
+    -fx-padding: 0 3px;
+}
+
+/* Mini Widget */
+.mini-widget {
+    -fx-background-color: #F3F6FA;
+    -fx-font-size: 12px;
+}
+
+.mini-heading {
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #26364A;
+}
+
+.mini-card {
+    -fx-background-color: #FFFFFF;
+    -fx-background-radius: 12px;
+    -fx-border-color: #E7ECF3;
+    -fx-border-radius: 12px;
+    -fx-padding: 12px;
+}
+
+.mini-section-title {
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #334155;
+}
+
+.mini-stat {
+    -fx-font-size: 11px;
+    -fx-text-fill: #64748B;
+}
+
+.mini-widget .tab-pane>.tab-header-area>.tab-header-background {
+    -fx-background-color: transparent;
+}
+
+.mini-widget .check-box {
+    -fx-text-fill: #334155;
+}
