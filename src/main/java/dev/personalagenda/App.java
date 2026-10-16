@@ -123,8 +123,9 @@ public class App extends Application {
 
         TimeBlockRepository blockRepository = new TimeBlockRepository();
 
-        timeline.showDate(LocalDate.now(),
-                blockRepository.findForDate(LocalDate.now()));
+        VBox scheduledBlocks = new VBox(8);
+
+        refreshSchedule(blockRepository, timeline, scheduledBlocks, LocalDate.now());
 
         Label scheduleTitle = new Label("Add Schedule - Today");
 
@@ -184,9 +185,7 @@ public class App extends Application {
 
                 blockRepository.insert(block);
 
-                timeline.showDate(
-                        today,
-                        blockRepository.findForDate(today));
+                refreshSchedule(blockRepository, timeline, scheduledBlocks, today);
 
                 blockTitleInput.clear();
                 blockStatus.setText("Scheduled: " + titleText);
@@ -216,7 +215,7 @@ public class App extends Application {
 
         VBox scheduleEditor = new VBox(
                 8, scheduleTitle, timeInputRow,
-                blockInputRow, blockStatus);
+                blockInputRow, blockStatus, new Label("Scheduled Activities"), scheduledBlocks);
 
         VBox mainColumn = new VBox(16, title, inputRow, dateRow, new Label("View: "), viewFilter, taskList,
                 progressLabel, progressBar, scheduleEditor);
@@ -234,7 +233,44 @@ public class App extends Application {
         stage.setTitle("Personal Agenda");
         stage.setScene(scene);
         stage.show();
+    }
 
+    private void refreshSchedule(
+            TimeBlockRepository repository,
+            TimelineView timeline,
+            VBox blockList,
+            LocalDate date) throws SQLException {
+
+        List<TimeBlock> blocks = repository.findForDate(date);
+
+        timeline.showDate(date, blocks);
+
+        blockList.getChildren().clear();
+
+        for (TimeBlock block : blocks) {
+
+            Label label = new Label(
+                    block.title() + " | "
+                            + block.start() + " → " + block.end());
+
+            Button deleteButton = new Button("×");
+
+            HBox row = new HBox(8, label, deleteButton);
+
+            deleteButton.setOnAction(event -> {
+                try {
+                    repository.delete(block.id());
+
+                    refreshSchedule(
+                            repository, timeline, blockList, date);
+
+                } catch (SQLException ex) {
+                    ex.printStackTrace();
+                }
+            });
+
+            blockList.getChildren().add(row);
+        }
     }
 
     private boolean matchesFilter(Task task, String filter) {
@@ -284,10 +320,6 @@ public class App extends Application {
         checkBox.setSelected(task.isCompleted());
 
         Label durationLabel = new Label(task.getEstimatedMinutes() + " min");
-
-        // Label dateLabel = new Label(
-        // task.getPlannedDate() == null ? "Backlog" :
-        // task.getPlannedDate().toString());
 
         DatePicker taskDateInput = new DatePicker(task.getPlannedDate());
         taskDateInput.setPrefWidth(150);

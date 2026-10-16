@@ -118,10 +118,10 @@ public class TimelineView extends VBox {
             eventLabel.setWrapText(true);
 
             String color = switch (block.type()) {
-                case TASK -> "#f0c6d3";
-                case FIXED -> "#cdf5cb";
-                case REST -> "#8d89db";
-                case FREE -> "#f1f2ca";
+                case TASK -> "#f7e3ea";
+                case FIXED -> "#ddf8dc";
+                case REST -> "#deddf2";
+                case FREE -> "#f8e5dc";
             };
 
             eventLabel.setStyle(

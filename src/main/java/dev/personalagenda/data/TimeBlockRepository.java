@@ -70,4 +70,15 @@ public class TimeBlockRepository {
 
         return blocks;
     }
+
+    public void delete(String id) throws SQLException {
+
+        String sql = "DELETE FROM  time_blocks WHERE id = ?";
+
+        try (Connection conn = Database.connect();
+                PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, id);
+            stmt.executeUpdate();
+        }
+    }
 }
