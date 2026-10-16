@@ -84,6 +84,24 @@ public class TaskRepository {
         }
     }
 
+    public void updatePlannedDate(String id, LocalDate date) throws SQLException {
+
+        String sql = """
+                UPDATE tasks
+                SET planned_date = ?
+                WHERE id = ?
+                """;
+
+        try (Connection conn = Database.connect();
+                PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setString(1, date == null ? null : date.toString());
+            stmt.setString(2, id);
+
+            stmt.executeUpdate();
+        }
+    }
+
     public void delete(String id) throws SQLException {
 
         String sql = """

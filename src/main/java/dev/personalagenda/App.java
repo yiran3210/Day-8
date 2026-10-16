@@ -2,10 +2,12 @@ package dev.personalagenda;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.sql.SQLException;
 import java.time.LocalDate;
 
 import javafx.application.Application;
+import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.scene.Scene;
 import javafx.scene.control.CheckBox;
@@ -177,13 +179,41 @@ public class App extends Application {
 
         Label durationLabel = new Label(task.getEstimatedMinutes() + " min");
 
-        Label dateLabel = new Label(
-                task.getPlannedDate() == null ? "Backlog" : task.getPlannedDate().toString());
+        // Label dateLabel = new Label(
+        // task.getPlannedDate() == null ? "Backlog" :
+        // task.getPlannedDate().toString());
+
+        DatePicker taskDateInput = new DatePicker(task.getPlannedDate());
+        taskDateInput.setPrefWidth(150);
+
+        Button clearDateButton = new Button("Backlog");
 
         Button deleteButton = new Button("x");
 
         HBox taskRow = new HBox(
-                12, checkBox, durationLabel, dateLabel, deleteButton);
+                12, checkBox, durationLabel, taskDateInput, clearDateButton, deleteButton);
+
+        taskDateInput.valueProperty().addListener((observable, oldDate, newDate) -> {
+
+            if (Objects.equals(task.getPlannedDate(), newDate)) {
+                return;
+            }
+
+            try {
+                repository.updatePlannedDate(task.getId(), newDate);
+
+                task.setPlannedDate(newDate);
+
+                Platform.runLater(() -> refreshTaskList(
+                        tasks, taskList, progressLabel, progressBar, repository, filter));
+            } catch (SQLException ex) {
+                ex.printStackTrace();
+
+                taskDateInput.setValue(task.getPlannedDate());
+            }
+        });
+
+        clearDateButton.setOnAction(e -> taskDateInput.setValue(null));
 
         checkBox.setOnAction(e -> {
 
