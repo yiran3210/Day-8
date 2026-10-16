@@ -158,3 +158,21 @@
 .task-row .check-box:disabled {
     -fx-opacity: 1.0;
 }
+
+.task-row .check-box {
+    -fx-text-fill: #314155;
+}
+
+.task-row .check-box:disabled {
+    -fx-text-fill: #314155;
+    -fx-opacity: 1.0;
+}
+
+.task-steps .label {
+    -fx-font-size: 12px;
+    -fx-text-fill: #4F5F73;
+}
+
+.task-steps .check-box {
+    -fx-text-fill: #314155;
+}

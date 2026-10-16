@@ -105,6 +105,28 @@ public class Database {
                     ON task_steps(task_id)
                     """);
 
+            statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS projects (
+                        id TEXT PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        category_name TEXT NOT NULL,
+                        start_date TEXT NOT NULL,
+                        due_date TEXT NOT NULL
+                    )
+                    """);
+
+            statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS task_project_links (
+                        task_id TEXT PRIMARY KEY,
+                        project_id TEXT NOT NULL
+                    )
+                    """);
+
+            statement.executeUpdate("""
+                    CREATE INDEX IF NOT EXISTS idx_task_project
+                    ON task_project_links(project_id)
+                    """);
+
         }
 
         System.out.println("Database initialized: " + DB_PATH);

@@ -2,8 +2,10 @@ package dev.personalagenda;
 
 import dev.personalagenda.model.Task;
 import dev.personalagenda.model.TimeBlock;
+import dev.personalagenda.model.TaskStep;
 import dev.personalagenda.data.Database;
 import dev.personalagenda.data.TaskRepository;
+import dev.personalagenda.data.TaskStepRepository;
 import dev.personalagenda.data.TimeBlockRepository;
 import dev.personalagenda.data.CategoryRepository;
 import dev.personalagenda.view.TimelineView;
@@ -51,6 +53,8 @@ public class App extends Application {
     private final CategoryRepository categoryRepository = new CategoryRepository();
 
     private final Map<String, String> categoryColors = new LinkedHashMap<>();
+
+    private final TaskStepRepository taskStepRepository = new TaskStepRepository();
 
     @Override
     public void start(Stage stage) throws Exception {
@@ -435,9 +439,8 @@ public class App extends Application {
                 dateRow,
                 new Label("View:"),
                 viewFilter,
-                taskList,
                 progressLabel,
-                progressBar);
+                progressBar, taskList);
 
         VBox schedulePanel = new VBox(
                 16,
@@ -874,11 +877,64 @@ public class App extends Application {
         return taskEntry;
     }
 
+    private int getTaskCompletedMinutes(Task task) {
+
+        try {
+            List<TaskStep> steps = taskStepRepository.findByTaskId(task.getId());
+
+            if (steps.isEmpty()) {
+                return task.isCompleted()
+                        ? task.getEstimatedMinutes()
+                        : 0;
+            }
+
+            return steps.stream()
+                    .filter(TaskStep::completed)
+                    .mapToInt(TaskStep::estimatedMinutes)
+                    .sum();
+
+        } catch (SQLException ex) {
+            ex.printStackTrace();
+            return 0;
+        }
+    }
+
+    private int getTaskPlannedMinutes(Task task) {
+
+        try {
+            List<TaskStep> steps = taskStepRepository.findByTaskId(task.getId());
+
+            if (steps.isEmpty()) {
+                return task.getEstimatedMinutes();
+            }
+
+            int allocated = steps.stream()
+                    .mapToInt(TaskStep::estimatedMinutes)
+                    .sum();
+
+            return Math.max(task.getEstimatedMinutes(), allocated);
+
+        } catch (SQLException ex) {
+            ex.printStackTrace();
+            return task.getEstimatedMinutes();
+        }
+    }
+
+    private boolean isTaskActuallyCompleted(Task task) {
+
+        int planned = getTaskPlannedMinutes(task);
+        int completed = getTaskCompletedMinutes(task);
+
+        return completed >= planned && planned > 0;
+    }
+
     private void updateProgress(List<Task> tasks, Label progressLabel, ProgressBar progressBar, String filter) {
 
-        int completed = 0;
-        int total = 0;
+        int completedTasks = 0;
+        int totalTasks = 0;
+
         int plannedMinutes = 0;
+        int completedMinutes = 0;
         int remainingMinutes = 0;
 
         for (Task task : tasks) {
@@ -887,24 +943,30 @@ public class App extends Application {
                 continue;
             }
 
-            total++;
-            plannedMinutes += task.getEstimatedMinutes();
+            totalTasks++;
 
-            if (task.isCompleted()) {
-                completed++;
-            } else {
-                remainingMinutes += task.getEstimatedMinutes();
+            int taskPlanned = getTaskPlannedMinutes(task);
+            int taskCompleted = getTaskCompletedMinutes(task);
+
+            plannedMinutes += taskPlanned;
+            completedMinutes += taskCompleted;
+            remainingMinutes += Math.max(0, taskPlanned - taskCompleted);
+
+            if (isTaskActuallyCompleted(task)) {
+                completedTasks++;
             }
         }
 
-        double progress = total == 0
+        double progress = plannedMinutes == 0
                 ? 0.0
-                : (double) completed / total;
+                : (double) completedMinutes / plannedMinutes;
 
         progressLabel.setText(
-                filter + ": " + completed + "/" + total + " completed | Planned: " + plannedMinutes
-                        + " min | Remaining: "
-                        + remainingMinutes + " min");
+                filter + ": "
+                        + Math.round(progress * 100) + "%"
+                        + " | Done: " + completedMinutes + "/" + plannedMinutes + " min"
+                        + " | Remaining: " + remainingMinutes + " min"
+                        + " | Tasks done: " + completedTasks + "/" + totalTasks);
 
         progressBar.setProgress(progress);
     }
