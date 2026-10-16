@@ -252,10 +252,101 @@ public class App extends Application {
             Label label = new Label(
                     block.title() + " | "
                             + block.start() + " → " + block.end());
-
+            Button editButton = new Button("Edit");
             Button deleteButton = new Button("×");
 
-            HBox row = new HBox(8, label, deleteButton);
+            HBox row = new HBox(8, label, editButton, deleteButton);
+
+            TextField titleEdit = new TextField(block.title());
+
+            DatePicker startDateEdit = new DatePicker(block.start().toLocalDate());
+
+            DatePicker endDateEdit = new DatePicker(block.end().toLocalDate());
+
+            TextField startTimeEdit = new TextField(block.start().toLocalTime().toString());
+
+            TextField endTimeEdit = new TextField(block.end().toLocalTime().toString());
+
+            startTimeEdit.setPrefColumnCount(5);
+            endTimeEdit.setPrefColumnCount(5);
+
+            ComboBox<TimeBlock.Type> typeEdit = new ComboBox<>();
+            typeEdit.getItems().addAll(TimeBlock.Type.values());
+            typeEdit.setValue(block.type());
+
+            Button saveEditButton = new Button("Save");
+            Button cancelEditButton = new Button("Cancel");
+
+            Label editStatus = new Label();
+
+            VBox editor = new VBox(
+                    6,
+                    titleEdit,
+                    new HBox(8, new Label("Start"), startDateEdit, startTimeEdit),
+                    new HBox(8, new Label("End"), endDateEdit, endTimeEdit),
+                    new HBox(8, typeEdit, saveEditButton, cancelEditButton),
+                    editStatus);
+
+            editor.setVisible(false);
+            editor.setManaged(false);
+
+            editButton.setOnAction(event -> {
+                boolean show = !editor.isVisible();
+                editor.setVisible(show);
+                editor.setManaged(show);
+            });
+
+            cancelEditButton.setOnAction(event -> {
+                editor.setVisible(false);
+                editor.setManaged(false);
+            });
+
+            saveEditButton.setOnAction(event -> {
+
+                String newTitle = titleEdit.getText().trim();
+
+                if (newTitle.isEmpty()
+                        || startDateEdit.getValue() == null
+                        || endDateEdit.getValue() == null) {
+
+                    editStatus.setText("Title and dates are required.");
+                    return;
+                }
+
+                try {
+                    LocalDateTime newStart = LocalDateTime.of(
+                            startDateEdit.getValue(),
+                            LocalTime.parse(startTimeEdit.getText().trim()));
+
+                    LocalDateTime newEnd = LocalDateTime.of(
+                            endDateEdit.getValue(),
+                            LocalTime.parse(endTimeEdit.getText().trim()));
+
+                    if (!newEnd.isAfter(newStart)) {
+                        editStatus.setText("End must be after start.");
+                        return;
+                    }
+
+                    TimeBlock updatedBlock = new TimeBlock(
+                            block.id(),
+                            newTitle,
+                            newStart,
+                            newEnd,
+                            typeEdit.getValue(),
+                            block.taskId());
+
+                    repository.update(updatedBlock);
+
+                    refreshSchedule(
+                            repository, timeline, blockList, date);
+
+                } catch (DateTimeParseException ex) {
+                    editStatus.setText("Invalid time. Use HH:mm.");
+                } catch (SQLException ex) {
+                    editStatus.setText("Database update failed.");
+                    ex.printStackTrace();
+                }
+            });
 
             deleteButton.setOnAction(event -> {
                 try {
@@ -269,7 +360,8 @@ public class App extends Application {
                 }
             });
 
-            blockList.getChildren().add(row);
+            VBox entry = new VBox(4, row, editor);
+            blockList.getChildren().add(entry);
         }
     }
 

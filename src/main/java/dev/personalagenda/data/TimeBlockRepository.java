@@ -81,4 +81,26 @@ public class TimeBlockRepository {
             stmt.executeUpdate();
         }
     }
+
+    public void update(TimeBlock block) throws SQLException {
+
+        String sql = """
+                UPDATE time_blocks
+                SET title = ?, start_time = ?, end_time = ?, type = ?
+                WHERE id = ?
+                """;
+
+        try (Connection conn = Database.connect();
+                PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setString(1, block.title());
+            stmt.setString(2, block.start().toString());
+            stmt.setString(3, block.end().toString());
+            stmt.setString(4, block.type().name());
+            stmt.setString(5, block.id());
+
+            stmt.executeUpdate();
+        }
+    }
+
 }
