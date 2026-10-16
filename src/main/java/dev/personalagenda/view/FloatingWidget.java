@@ -25,6 +25,7 @@ import java.util.HashSet;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.geometry.Insets;
+import javafx.application.Platform;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
@@ -59,6 +60,14 @@ public class FloatingWidget {
     private final Label projectExpectedLabel = new Label();
     private final Label clockTimeLabel = new Label();
 
+    private Task currentFocusedTask;
+
+    private final Label clockFocusLabel = new Label();
+    private final Label clockFocusCategory = new Label();
+
+    private final VBox clockFocusCard = new VBox(
+            5, clockFocusLabel, clockFocusCategory);
+
     private final ClockFace clockFace = new ClockFace();
 
     private final ComboBox<Task> focusTaskChoice = new ComboBox<>();
@@ -90,7 +99,7 @@ public class FloatingWidget {
         window.setTitle("Agenda · Mini");
         window.setAlwaysOnTop(true);
         window.setMinWidth(280);
-        window.setMinHeight(480);
+        window.setMinHeight(260);
 
         // begin change
 
@@ -186,10 +195,25 @@ public class FloatingWidget {
 
         clockTimeLabel.getStyleClass().add("mini-clock-time");
 
+        clockFocusLabel.setWrapText(true);
+        clockFocusCategory.setWrapText(true);
+
+        clockFocusCard.setPrefWidth(140);
+        clockFocusCard.setMaxWidth(140);
+        clockFocusCard.getStyleClass().add("clock-focus-card");
+
+        VBox clockInfo = new VBox(
+                12, clockTimeLabel, clockFocusCard);
+
+        HBox clockHero = new HBox(
+                10, clockFace, clockInfo);
+
+        clockHero.setAlignment(
+                javafx.geometry.Pos.CENTER_LEFT);
+
         VBox clockContent = new VBox(
                 10,
-                clockFace,
-                clockTimeLabel,
+                clockHero,
                 new Label("Project Progress"),
                 clockProjectChoice,
                 projectBar,
@@ -234,13 +258,57 @@ public class FloatingWidget {
         root.setPadding(new Insets(14));
         root.getStyleClass().add("mini-widget");
 
-        Scene scene = new Scene(root, 370, 475);
+        root.setPrefWidth(390);
+
+        Scene scene = new Scene(root);
 
         scene.getStylesheets().add(
                 getClass().getResource(
                         "/styles/light.css").toExternalForm());
 
         window.setScene(scene);
+
+        tabs.setMinHeight(Region.USE_PREF_SIZE);
+        tabs.setMaxHeight(Region.USE_PREF_SIZE);
+
+        Runnable resizeWidget = () -> {
+
+            if (!window.isShowing()) {
+                return;
+            }
+
+            root.applyCss();
+
+            Region content = (Region) tabs.getSelectionModel()
+                    .getSelectedItem().getContent();
+
+            double contentHeight = content.prefHeight(
+                    Math.max(300, tabs.getWidth() - 24));
+
+            double headerHeight = 42;
+
+            javafx.scene.Node header = tabs.lookup(".tab-header-area");
+
+            if (header instanceof Region region) {
+                headerHeight = Math.max(
+                        36, region.prefHeight(-1));
+            }
+
+            tabs.setPrefHeight(
+                    contentHeight + headerHeight + 4);
+
+            root.requestLayout();
+            root.applyCss();
+            root.layout();
+
+            window.sizeToScene();
+        };
+
+        tabs.getSelectionModel()
+                .selectedItemProperty()
+                .addListener((obs, oldTab, newTab) -> Platform.runLater(resizeWidget));
+
+        window.setOnShown(event -> Platform.runLater(resizeWidget));
 
         clock.setCycleCount(Timeline.INDEFINITE);
 
@@ -352,6 +420,8 @@ public class FloatingWidget {
             }
 
             updateFocusTask(current, allTasks, today);
+
+            refreshClockFocus();
 
             nextLabel.setText(
                     next == null
@@ -544,6 +614,8 @@ public class FloatingWidget {
 
         taskControls.getChildren().clear();
 
+        currentFocusedTask = selected;
+
         if (selected == null) {
             taskBar.setValues(0, 0);
             taskProgressLabel.setText("No focus task selected.");
@@ -642,6 +714,58 @@ public class FloatingWidget {
                 "Actual " + Math.round(actual * 100)
                         + "% · Expected "
                         + Math.round(expected * 100) + "%");
+    }
+
+    private void refreshClockFocus() throws SQLException {
+
+        if (currentFocusedTask == null) {
+
+            clockFocusLabel.setText("No focus task");
+            clockFocusCategory.setText("Choose a task in Focus");
+
+            clockFocusCard.setStyle(
+                    "-fx-background-color: #E8EDF5;"
+                            + "-fx-background-radius: 10;"
+                            + "-fx-padding: 10;");
+
+            return;
+        }
+
+        String category = categories.findForTask(
+                currentFocusedTask.getId());
+
+        String colorHex = categories.findAll()
+                .getOrDefault(category, "#E8EDF5");
+
+        Color color = Color.web(colorHex);
+
+        double brightness = color.getRed() * 0.2126
+                + color.getGreen() * 0.7152
+                + color.getBlue() * 0.0722;
+
+        String textColor = brightness > 0.55
+                ? "#26364A"
+                : "#FFFFFF";
+
+        clockFocusLabel.setText(
+                currentFocusedTask.getTitle());
+
+        clockFocusCategory.setText(
+                "FOCUS · " + category);
+
+        clockFocusLabel.setStyle(
+                "-fx-text-fill: " + textColor + ";"
+                        + "-fx-font-weight: bold;");
+
+        clockFocusCategory.setStyle(
+                "-fx-text-fill: " + textColor + ";");
+
+        clockFocusCard.setStyle(
+                "-fx-background-color: " + colorHex + ";"
+                        + "-fx-background-radius: 10;"
+                        + "-fx-padding: 10;"
+                        + "-fx-effect: dropshadow(gaussian,"
+                        + "rgba(40,55,80,0.16),10,0.15,0,3);");
     }
 
 }

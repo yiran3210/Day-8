@@ -30,7 +30,6 @@ import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
-import javafx.scene.Scene;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ColorPicker;
@@ -49,8 +48,10 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.scene.layout.FlowPane;
+import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 import javafx.stage.Stage;
+import javafx.scene.Scene;
 
 public class App extends Application {
 
@@ -453,13 +454,29 @@ public class App extends Application {
                 newCategoryInput,
                 categoryStatus);
 
+        Label quickAddTitle = new Label("Quick Add");
+        Label taskListTitle = new Label("Task List");
+
+        VBox taskComposer = new VBox(
+                10, quickAddTitle, inputRow, dateRow);
+
+        taskComposer.getStyleClass().add("task-composer");
+
+        Region toolbarSpacer = new Region();
+
+        HBox taskToolbar = new HBox(
+                12, taskListTitle, toolbarSpacer, viewFilter);
+
+        HBox.setHgrow(
+                toolbarSpacer, Priority.ALWAYS);
+
+        taskToolbar.setAlignment(
+                javafx.geometry.Pos.CENTER_LEFT);
+
         VBox taskPanel = new VBox(
                 16,
-                title,
-                inputRow,
-                dateRow,
-                new Label("View:"),
-                viewFilter,
+                taskComposer,
+                taskToolbar,
                 taskList);
 
         VBox schedulePanel = new VBox(
@@ -1045,11 +1062,12 @@ public class App extends Application {
                 : (double) completedMinutes / plannedMinutes;
 
         progressLabel.setText(
-                "Today: "
-                        + Math.round(progress * 100) + "%"
-                        + " | Done: " + completedMinutes + "/" + plannedMinutes + " min"
-                        + " | Remaining: " + remainingMinutes + " min"
-                        + " | Tasks done: " + completedTasks + "/" + totalTasks);
+                "Today: " + Math.round(progress * 100) + "%"
+                        + "  ·  " + completedMinutes + "/" + plannedMinutes
+                        + " min\n"
+                        + remainingMinutes + " min remaining"
+                        + "  ·  " + completedTasks + "/" + totalTasks
+                        + " tasks completed");
 
         progressBar.setProgress(progress);
     }

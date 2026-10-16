@@ -379,3 +379,20 @@
 .mini-widget .check-box {
     -fx-text-fill: #334155;
 }
+
+.task-composer {
+    -fx-background-color: #F7F9FC;
+    -fx-background-radius: 12px;
+    -fx-padding: 14px;
+}
+
+.task-composer>.label {
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #334155;
+}
+
+.clock-focus-card {
+    -fx-background-radius: 10px;
+    -fx-padding: 10px;
+}
