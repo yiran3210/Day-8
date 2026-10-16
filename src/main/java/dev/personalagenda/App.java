@@ -125,7 +125,7 @@ public class App extends Application {
         LocalDate today = LocalDate.now();
 
         TimeBlock demoBlock = new TimeBlock(
-                "Journal Paper Writing",
+                "reply email",
                 today.atTime(12, 0),
                 today.atTime(14, 0),
                 TimeBlock.Type.TASK,
@@ -153,7 +153,7 @@ public class App extends Application {
 
         layout.setPadding(new Insets(20));
 
-        Scene scene = new Scene(layout, 880, 640);
+        Scene scene = new Scene(layout, 800, 640);
 
         stage.setTitle("Personal Agenda");
         stage.setScene(scene);

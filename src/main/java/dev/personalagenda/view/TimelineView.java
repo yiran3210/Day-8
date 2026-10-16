@@ -15,11 +15,21 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.Line;
 import javafx.scene.paint.Color;
+import javafx.animation.KeyFrame;
+import javafx.animation.Timeline;
 
 public class TimelineView extends VBox {
 
     private static final double HOUR_HEIGHT = 40;
     private final Pane canvas = new Pane();
+
+    private LocalDate displayedDate;
+    private List<TimeBlock> displayedBlocks = List.of();
+
+    private final Label currentStatus = new Label();
+    private final Label nextStatus = new Label();
+
+    private final Line nowLine = new Line();
 
     public TimelineView() {
 
@@ -38,12 +48,24 @@ public class TimelineView extends VBox {
         setPrefWidth(320);
         setMinWidth(320);
 
-        getChildren().addAll(heading, scrollPane);
+        currentStatus.setWrapText(true);
+        nextStatus.setWrapText(true);
+
+        getChildren().addAll(heading, currentStatus, nextStatus, scrollPane);
+
+        Timeline clock = new Timeline(
+                new KeyFrame(javafx.util.Duration.seconds(30), event -> updateNow()));
+
+        clock.setCycleCount(Timeline.INDEFINITE);
+        clock.play();
     }
 
     public void showDate(LocalDate date, List<TimeBlock> blocks) {
 
         canvas.getChildren().clear();
+
+        displayedDate = date;
+        displayedBlocks = blocks;
 
         for (int hour = 0; hour <= 24; hour++) {
 
@@ -110,6 +132,75 @@ public class TimelineView extends VBox {
 
             canvas.getChildren().add(eventLabel);
         }
+        updateNow();
+    }
 
+    private void updateNow() {
+
+        if (displayedDate == null) {
+            return;
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+
+        canvas.getChildren().remove(nowLine);
+
+        if (!now.toLocalDate().equals(displayedDate)) {
+            currentStatus.setText("Viewing: " + displayedDate);
+            nextStatus.setText("");
+            return;
+        }
+
+        double minutes = now.getHour() * 60
+                + now.getMinute()
+                + now.getSecond() / 60.0;
+
+        double y = minutes / 60.0 * HOUR_HEIGHT;
+
+        nowLine.setStartX(56);
+        nowLine.setEndX(280);
+        nowLine.setStartY(y);
+        nowLine.setEndY(y);
+        nowLine.setStroke(Color.web("#893030"));
+        nowLine.setStrokeWidth(2);
+
+        canvas.getChildren().add(nowLine);
+
+        TimeBlock current = null;
+        TimeBlock next = null;
+
+        for (TimeBlock block : displayedBlocks) {
+
+            if (!now.isBefore(block.start()) && now.isBefore(block.end())) {
+
+                current = block;
+
+            } else if (block.start().isAfter(now) && (next == null || block.start().isBefore(next.start()))) {
+                next = block;
+            }
+        }
+        if (current == null) {
+            currentStatus.setText("Current: Unscheduled");
+        } else {
+
+            double elapsed = Duration.between(
+                    current.start(), now).toSeconds();
+
+            double total = Duration.between(
+                    current.start(), current.end()).toSeconds();
+            int percent = (int) Math.round(
+                    100.0 * elapsed / total);
+
+            currentStatus.setText(
+                    "Current: " + current.title()
+                            + " | " + percent + "% elapsed");
+        }
+
+        if (next == null) {
+            nextStatus.setText("Next: No further activities");
+        } else {
+            nextStatus.setText(
+                    "Next: " + next.title() + " | " + next.start().toLocalTime());
+        }
     }
 }
