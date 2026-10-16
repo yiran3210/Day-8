@@ -66,10 +66,10 @@ public class App extends Application {
         ProgressBar progressBar = new ProgressBar(0);
         progressBar.setPrefWidth(400);
 
-        refreshTashList(tasks, taskList, progressLabel, progressBar, repository, viewFilter.getValue());
+        refreshTaskList(tasks, taskList, progressLabel, progressBar, repository, viewFilter.getValue());
 
         viewFilter.setOnAction(event -> {
-            refreshTashList(tasks, taskList, progressLabel, progressBar, repository, viewFilter.getValue());
+            refreshTaskList(tasks, taskList, progressLabel, progressBar, repository, viewFilter.getValue());
         });
 
         addButton.setOnAction(event -> {
@@ -95,7 +95,7 @@ public class App extends Application {
 
             if (matchesFilter(newTask, viewFilter.getValue())) {
                 HBox taskRow = createTaskRow(
-                        newTask, tasks, taskList, progressLabel, progressBar, repository);
+                        newTask, tasks, taskList, progressLabel, progressBar, repository, viewFilter.getValue());
 
                 taskList.getChildren().add(taskRow);
             } else {
@@ -104,7 +104,7 @@ public class App extends Application {
 
             taskInput.clear();
 
-            updateProgress(tasks, progressLabel, progressBar);
+            updateProgress(tasks, progressLabel, progressBar, viewFilter.getValue());
         });
 
         taskInput.setOnAction(event -> addButton.fire());
@@ -145,7 +145,7 @@ public class App extends Application {
         };
     }
 
-    private void refreshTashList(
+    private void refreshTaskList(
             List<Task> tasks, VBox taskList, Label progressLabel, ProgressBar progressBar, TaskRepository repository,
             String filter) {
 
@@ -156,12 +156,12 @@ public class App extends Application {
                 continue;
             }
 
-            HBox row = createTaskRow(task, tasks, taskList, progressLabel, progressBar, repository);
+            HBox row = createTaskRow(task, tasks, taskList, progressLabel, progressBar, repository, filter);
 
             taskList.getChildren().add(row);
         }
 
-        updateProgress(tasks, progressLabel, progressBar);
+        updateProgress(tasks, progressLabel, progressBar, filter);
     }
 
     private HBox createTaskRow(
@@ -170,7 +170,7 @@ public class App extends Application {
             VBox taskList,
             Label progressLabel,
             ProgressBar progressBar,
-            TaskRepository repository) {
+            TaskRepository repository, String filter) {
 
         CheckBox checkBox = new CheckBox(task.getTitle());
         checkBox.setSelected(task.isCompleted());
@@ -193,7 +193,7 @@ public class App extends Application {
                 repository.updateCompleted(task.getId(), completed);
 
                 task.setCompleted(completed);
-                updateProgress(tasks, progressLabel, progressBar);
+                updateProgress(tasks, progressLabel, progressBar, filter);
             } catch (SQLException ex) {
                 checkBox.setSelected(task.isCompleted());
                 ex.printStackTrace();
@@ -208,7 +208,7 @@ public class App extends Application {
                 tasks.remove(task);
                 taskList.getChildren().remove(taskRow);
 
-                updateProgress(tasks, progressLabel, progressBar);
+                updateProgress(tasks, progressLabel, progressBar, filter);
             } catch (SQLException ex) {
                 ex.printStackTrace();
             }
@@ -217,24 +217,37 @@ public class App extends Application {
         return taskRow;
     }
 
-    private void updateProgress(List<Task> tasks, Label progressLabel, ProgressBar progressBar) {
+    private void updateProgress(List<Task> tasks, Label progressLabel, ProgressBar progressBar, String filter) {
 
         int completed = 0;
+        int total = 0;
+        int plannedMinutes = 0;
+        int remainingMinutes = 0;
 
         for (Task task : tasks) {
+
+            if (!matchesFilter(task, filter)) {
+                continue;
+            }
+
+            total++;
+            plannedMinutes += task.getEstimatedMinutes();
+
             if (task.isCompleted()) {
                 completed++;
+            } else {
+                remainingMinutes += task.getEstimatedMinutes();
             }
         }
-
-        int total = tasks.size();
 
         double progress = total == 0
                 ? 0.0
                 : (double) completed / total;
 
         progressLabel.setText(
-                "All tasks: " + completed + " / " + total + " completed");
+                filter + ": " + completed + "/" + total + " completed | Planned: " + plannedMinutes
+                        + " min | Remaining: "
+                        + remainingMinutes + " min");
 
         progressBar.setProgress(progress);
     }
