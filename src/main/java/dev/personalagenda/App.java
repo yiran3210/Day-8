@@ -10,6 +10,7 @@ import dev.personalagenda.data.TimeBlockRepository;
 import dev.personalagenda.data.CategoryRepository;
 import dev.personalagenda.view.TimelineView;
 import dev.personalagenda.view.TaskStepsView;
+import dev.personalagenda.view.ProjectDashboard;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -32,6 +33,7 @@ import javafx.scene.Scene;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ColorPicker;
+import javafx.scene.control.Separator;
 import javafx.scene.control.MenuButton;
 import javafx.scene.control.MenuItem;
 import javafx.scene.layout.VBox;
@@ -446,9 +448,14 @@ public class App extends Application {
                 16,
                 scheduleEditor);
 
+        ProjectDashboard projectDashboard = new ProjectDashboard(categoryColors);
+
         VBox categoryPanel = new VBox(
-                16,
+                20,
+                projectDashboard,
+                new Separator(),
                 categoryEditor);
+
         taskPanel.getStyleClass().add("content-card");
         schedulePanel.getStyleClass().add("content-card");
         categoryPanel.getStyleClass().add("content-card");
@@ -468,7 +475,12 @@ public class App extends Application {
         Tab scheduleTab = new Tab("Schedule", scheduleScroll);
         scheduleTab.setClosable(false);
 
-        Tab categoryTab = new Tab("Categories", categoryScroll);
+        Tab categoryTab = new Tab("Projects", categoryScroll);
+        categoryTab.setOnSelectionChanged(event -> {
+            if (categoryTab.isSelected()) {
+                projectDashboard.refresh();
+            }
+        });
         categoryTab.setClosable(false);
 
         TabPane leftTabs = new TabPane(

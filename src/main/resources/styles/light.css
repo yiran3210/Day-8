@@ -176,3 +176,17 @@
 .task-steps .check-box {
     -fx-text-fill: #314155;
 }
+
+.project-card {
+    -fx-background-color: #F7F9FC;
+    -fx-background-radius: 12px;
+    -fx-padding: 16px;
+}
+
+.project-card>.label {
+    -fx-text-fill: #334155;
+}
+
+.project-card .button {
+    -fx-background-radius: 8px;
+}
