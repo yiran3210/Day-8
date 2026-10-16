@@ -1,0 +1,103 @@
+/* Personal Agenda - Light Theme */
+
+/* General appearance */
+.root {
+    -fx-font-family: "Segoe UI";
+    -fx-font-size: 14px;
+    -fx-background-color: #F3F6FA;
+}
+
+.app-root {
+    -fx-background-color: #F3F6FA;
+}
+
+/* Main panels */
+.content-card,
+.timeline-card {
+    -fx-background-color: #FFFFFF;
+    -fx-background-radius: 16px;
+    -fx-padding: 18px;
+}
+
+/* Text */
+.label {
+    -fx-text-fill: #334155;
+}
+
+/* Buttons */
+.button {
+    -fx-background-color: #E9EFF7;
+    -fx-background-radius: 10px;
+    -fx-text-fill: #334155;
+    -fx-padding: 7px 12px;
+    -fx-cursor: hand;
+}
+
+.button:hover {
+    -fx-background-color: #DCE7F5;
+}
+
+/* Input controls */
+.text-field,
+.combo-box,
+.date-picker,
+.spinner {
+    -fx-background-color: #F8FAFD;
+    -fx-background-radius: 9px;
+    -fx-border-radius: 9px;
+    -fx-border-color: #DCE4EF;
+}
+
+/* Checklist rows */
+.task-row {
+    -fx-background-color: #F7F9FC;
+    -fx-background-radius: 10px;
+    -fx-padding: 10px;
+    -fx-alignment: center-left;
+}
+
+/* Progress */
+.progress-bar>.track {
+    -fx-background-color: #E7ECF3;
+    -fx-background-radius: 8px;
+}
+
+.progress-bar>.bar {
+    -fx-background-color: #5F91BC;
+    -fx-background-radius: 8px;
+}
+
+/* Scroll panes */
+.scroll-pane,
+.scroll-pane>.viewport {
+    -fx-background-color: transparent;
+    -fx-background: transparent;
+    -fx-border-color: transparent;
+}
+
+/* Timeline blocks */
+.time-block {
+    -fx-background-radius: 8px;
+    -fx-padding: 4px 8px;
+    -fx-font-size: 12px;
+}
+
+.time-block-task {
+    -fx-background-color: #E4EEF9;
+    -fx-text-fill: #365F91;
+}
+
+.time-block-fixed {
+    -fx-background-color: #FAEDD8;
+    -fx-text-fill: #987039;
+}
+
+.time-block-rest {
+    -fx-background-color: #E3F0E5;
+    -fx-text-fill: #477957;
+}
+
+.time-block-free {
+    -fx-background-color: #ECEFF3;
+    -fx-text-fill: #687487;
+}

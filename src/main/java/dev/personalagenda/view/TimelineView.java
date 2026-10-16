@@ -117,18 +117,16 @@ public class TimelineView extends VBox {
             eventLabel.setMinHeight(0);
             eventLabel.setWrapText(true);
 
-            String color = switch (block.type()) {
-                case TASK -> "#f7e3ea";
-                case FIXED -> "#ddf8dc";
-                case REST -> "#deddf2";
-                case FREE -> "#f8e5dc";
+            String typeStyle = switch (block.type()) {
+                case TASK -> "time-block-task";
+                case FIXED -> "time-block-fixed";
+                case REST -> "time-block-rest";
+                case FREE -> "time-block-free";
             };
 
-            eventLabel.setStyle(
-                    "-fx-background-color: " + color + ";" +
-                            "-fx-background-radius: 5;" +
-                            "-fx-padding: 3 6;" +
-                            "-fx-font-size: 12px;");
+            eventLabel.getStyleClass().addAll(
+                    "time-block",
+                    typeStyle);
 
             canvas.getChildren().add(eventLabel);
         }

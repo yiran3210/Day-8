@@ -226,9 +226,16 @@ public class App extends Application {
         HBox layout = new HBox(
                 16, checklistPane, timeline);
 
+        layout.getStyleClass().add("app-root");
+        mainColumn.getStyleClass().add("content-card");
+        timeline.getStyleClass().add("timeline-card");
+
         layout.setPadding(new Insets(20));
 
         Scene scene = new Scene(layout, 800, 640);
+
+        scene.getStylesheets().add(
+                getClass().getResource("/styles/light.css").toExternalForm());
 
         stage.setTitle("Personal Agenda");
         stage.setScene(scene);
@@ -422,6 +429,8 @@ public class App extends Application {
 
         HBox taskRow = new HBox(
                 12, checkBox, durationLabel, taskDateInput, clearDateButton, deleteButton);
+
+        taskRow.getStyleClass().add("task-row");
 
         taskDateInput.valueProperty().addListener((observable, oldDate, newDate) -> {
 
