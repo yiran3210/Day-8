@@ -7,6 +7,7 @@ import dev.personalagenda.data.TaskRepository;
 import dev.personalagenda.data.TimeBlockRepository;
 import dev.personalagenda.data.CategoryRepository;
 import dev.personalagenda.view.TimelineView;
+import dev.personalagenda.view.TaskStepsView;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -130,10 +131,10 @@ public class App extends Application {
             tasks.add(newTask);
 
             if (matchesFilter(newTask, viewFilter.getValue())) {
-                HBox taskRow = createTaskRow(
+                VBox taskEntry = createTaskRow(
                         newTask, tasks, taskList, progressLabel, progressBar, repository, viewFilter.getValue());
 
-                taskList.getChildren().add(taskRow);
+                taskList.getChildren().add(taskEntry);
             } else {
                 viewFilter.setValue("All");
             }
@@ -719,15 +720,15 @@ public class App extends Application {
                 continue;
             }
 
-            HBox row = createTaskRow(task, tasks, taskList, progressLabel, progressBar, repository, filter);
+            VBox taskEntry = createTaskRow(task, tasks, taskList, progressLabel, progressBar, repository, filter);
 
-            taskList.getChildren().add(row);
+            taskList.getChildren().add(taskEntry);
         }
 
         updateProgress(tasks, progressLabel, progressBar, filter);
     }
 
-    private HBox createTaskRow(
+    private VBox createTaskRow(
             Task task,
             List<Task> tasks,
             VBox taskList,
@@ -818,6 +819,23 @@ public class App extends Application {
 
         clearDateButton.setOnAction(e -> taskDateInput.setValue(null));
 
+        TaskStepsView stepsView = new TaskStepsView(
+                task,
+                checkBox,
+                repository,
+                () -> {
+                    updateProgress(
+                            tasks, progressLabel, progressBar, filter);
+
+                    if ("Replan".equals(filter) && task.isCompleted()) {
+                        Platform.runLater(() -> refreshTaskList(
+                                tasks, taskList, progressLabel,
+                                progressBar, repository, filter));
+                    }
+                });
+
+        VBox taskEntry = new VBox(4, taskRow, stepsView);
+
         checkBox.setOnAction(e -> {
 
             boolean completed = checkBox.isSelected();
@@ -826,6 +844,7 @@ public class App extends Application {
                 repository.updateCompleted(task.getId(), completed);
 
                 task.setCompleted(completed);
+                stepsView.refresh();
                 if ("Replan".equals(filter)) {
                     Platform.runLater(
                             () -> refreshTaskList(tasks, taskList, progressLabel, progressBar, repository, filter));
@@ -844,7 +863,7 @@ public class App extends Application {
                 repository.delete(task.getId());
 
                 tasks.remove(task);
-                taskList.getChildren().remove(taskRow);
+                taskList.getChildren().remove(taskEntry);
 
                 updateProgress(tasks, progressLabel, progressBar, filter);
             } catch (SQLException ex) {
@@ -852,7 +871,7 @@ public class App extends Application {
             }
         });
 
-        return taskRow;
+        return taskEntry;
     }
 
     private void updateProgress(List<Task> tasks, Label progressLabel, ProgressBar progressBar, String filter) {

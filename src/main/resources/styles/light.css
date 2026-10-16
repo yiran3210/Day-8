@@ -134,3 +134,27 @@
 .tab-pane>.tab-header-area {
     -fx-padding: 0 0 8 0;
 }
+
+.task-steps {
+    -fx-background-color: #FAFBFD;
+    -fx-background-radius: 0 0 10 10;
+    -fx-padding: 7 12 10 12;
+}
+
+.task-steps .progress-bar {
+    -fx-pref-height: 9px;
+}
+
+.task-steps .label {
+    -fx-font-size: 12px;
+    -fx-text-fill: #566579;
+}
+
+.task-steps .check-box {
+    -fx-text-fill: #334155;
+}
+
+/* Keep task titles readable even when controlled by Steps */
+.task-row .check-box:disabled {
+    -fx-opacity: 1.0;
+}
