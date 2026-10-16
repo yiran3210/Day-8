@@ -11,8 +11,9 @@ import dev.personalagenda.data.CategoryRepository;
 import dev.personalagenda.view.TimelineView;
 import dev.personalagenda.view.TaskStepsView;
 import dev.personalagenda.view.ProjectDashboard;
+import dev.personalagenda.view.FloatingWidget;
 
-import java.util.ArrayList;
+// import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
@@ -155,10 +156,21 @@ public class App extends Application {
         TimelineView timeline = new TimelineView();
 
         progressLabel.setWrapText(true);
-        progressBar.setMaxWidth(Double.MAX_VALUE);
 
-        timeline.getChildren().add(1, progressLabel);
-        timeline.getChildren().add(2, progressBar);
+        progressBar.setMinHeight(12);
+        progressBar.setPrefHeight(12);
+        progressBar.setPrefWidth(320);
+        progressBar.setMaxWidth(Double.MAX_VALUE);
+        progressBar.setVisible(true);
+        progressBar.setManaged(true);
+        progressBar.getStyleClass().add("daily-progress");
+
+        VBox dailyProgressBox = new VBox(
+                8, progressLabel, progressBar);
+
+        dailyProgressBox.setFillWidth(true);
+
+        timeline.getChildren().add(1, dailyProgressBox);
 
         TimeBlockRepository blockRepository = new TimeBlockRepository();
 
@@ -510,6 +522,35 @@ public class App extends Application {
 
         stage.setTitle("Personal Agenda");
         stage.setScene(scene);
+
+        FloatingWidget floatingWidget = new FloatingWidget(
+                stage,
+                () -> {
+                    try {
+                        tasks.clear();
+                        tasks.addAll(repository.findAll());
+
+                        refreshTaskList(
+                                tasks,
+                                taskList,
+                                progressLabel,
+                                progressBar,
+                                repository,
+                                viewFilter.getValue());
+
+                        projectDashboard.refresh();
+
+                    } catch (SQLException ex) {
+                        ex.printStackTrace();
+                    }
+                });
+
+        Button openWidgetButton = new Button("Open Mini Widget");
+        openWidgetButton.setOnAction(
+                event -> floatingWidget.show());
+
+        timeline.getChildren().add(0, openWidgetButton);
+
         stage.show();
     }
 

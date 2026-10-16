@@ -115,4 +115,26 @@ public class ProjectRepository {
 
         return taskIds;
     }
+
+    public void update(Project project) throws SQLException {
+
+        String sql = """
+                UPDATE projects
+                SET name = ?, category_name = ?,
+                    start_date = ?, due_date = ?
+                WHERE id = ?
+                """;
+
+        try (Connection conn = Database.connect();
+                PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setString(1, project.name());
+            stmt.setString(2, project.categoryName());
+            stmt.setString(3, project.startDate().toString());
+            stmt.setString(4, project.dueDate().toString());
+            stmt.setString(5, project.id());
+
+            stmt.executeUpdate();
+        }
+    }
 }

@@ -259,15 +259,86 @@ public class ProjectDashboard extends VBox {
                                 tasksPane.setExpanded(false);
                                 tasksPane.setAnimated(false);
 
+                                Button editProjectButton = new Button("Edit");
+
+                                TextField projectNameEdit = new TextField(project.name());
+
+                                ComboBox<String> projectCategoryEdit = new ComboBox<>();
+                                projectCategoryEdit.getItems().setAll(
+                                                categoryColors.keySet());
+                                projectCategoryEdit.setValue(project.categoryName());
+
+                                DatePicker projectStartEdit = new DatePicker(project.startDate());
+
+                                DatePicker projectDueEdit = new DatePicker(project.dueDate());
+
+                                Button saveProjectEdit = new Button("Save");
+                                Button cancelProjectEdit = new Button("Cancel");
+                                Label projectEditStatus = new Label();
+
+                                VBox projectEditor = new VBox(
+                                                8,
+                                                projectNameEdit,
+                                                new HBox(
+                                                                8,
+                                                                new Label("Category"),
+                                                                projectCategoryEdit),
+                                                new HBox(
+                                                                8, new Label("Start"), projectStartEdit),
+                                                new HBox(
+                                                                8, new Label("Due"), projectDueEdit),
+                                                new HBox(
+                                                                8, saveProjectEdit, cancelProjectEdit),
+                                                projectEditStatus);
+
+                                projectEditor.setVisible(false);
+                                projectEditor.setManaged(false);
+
+                                editProjectButton.setOnAction(event -> {
+                                        boolean open = !projectEditor.isVisible();
+                                        projectEditor.setVisible(open);
+                                        projectEditor.setManaged(open);
+                                });
+
+                                cancelProjectEdit.setOnAction(event -> {
+                                        projectEditor.setVisible(false);
+                                        projectEditor.setManaged(false);
+                                });
+
+                                saveProjectEdit.setOnAction(event -> {
+                                        try {
+                                                Project updated = new Project(
+                                                                project.id(),
+                                                                projectNameEdit.getText().trim(),
+                                                                projectCategoryEdit.getValue(),
+                                                                projectStartEdit.getValue(),
+                                                                projectDueEdit.getValue());
+
+                                                projects.update(updated);
+                                                refresh();
+
+                                        } catch (IllegalArgumentException ex) {
+                                                projectEditStatus.setText(ex.getMessage());
+                                        } catch (SQLException ex) {
+                                                projectEditStatus.setText("Update failed.");
+                                                ex.printStackTrace();
+                                        }
+                                });
+
+                                Label projectNameLabel = new Label(project.name());
+
+                                HBox projectHeader = new HBox(
+                                                12, projectNameLabel, editProjectButton);
+
                                 VBox card = new VBox(
-                                                9,
-                                                new Label(project.name()),
+                                                10,
+                                                projectHeader,
                                                 new Label(
                                                                 project.startDate()
                                                                                 + " → " + project.dueDate()),
                                                 bar,
                                                 progressText,
-                                                expectedText,
+                                                expectedText, projectEditor,
                                                 tasksPane);
 
                                 card.getStyleClass().add("project-card");

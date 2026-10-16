@@ -201,3 +201,20 @@
     -fx-background-color: transparent;
     -fx-border-color: transparent;
 }
+
+.daily-progress {
+    -fx-pref-height: 12px;
+    -fx-min-height: 12px;
+    -fx-accent: #5F91BC;
+}
+
+.daily-progress>.track {
+    -fx-background-color: #E7ECF3;
+    -fx-background-radius: 8px;
+}
+
+.daily-progress>.bar {
+    -fx-background-color: #5F91BC;
+    -fx-background-radius: 8px;
+    -fx-padding: 5px;
+}
