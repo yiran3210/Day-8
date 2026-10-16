@@ -63,6 +63,32 @@ public class Database {
                     """;
 
             statement.executeUpdate(timeBlockSql);
+
+            statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS categories (
+                        name TEXT PRIMARY KEY COLLATE NOCASE,
+                        color TEXT NOT NULL
+                    )
+                    """);
+
+            statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS task_category_links (
+                        task_id TEXT PRIMARY KEY,
+                        category_name TEXT NOT NULL
+                    )
+                    """);
+
+            statement.executeUpdate("""
+                    INSERT OR IGNORE INTO categories (name, color)
+                    VALUES
+                        ('General', '#E7ECF3'),
+                        ('Paper', '#DCEAFE'),
+                        ('Thesis', '#EADFF7'),
+                        ('Career', '#F7E5CC'),
+                        ('Training', '#D9F1E8'),
+                        ('Personal', '#E4EAF0')
+                    """);
+
         }
 
         System.out.println("Database initialized: " + DB_PATH);

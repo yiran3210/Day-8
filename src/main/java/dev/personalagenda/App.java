@@ -5,10 +5,13 @@ import dev.personalagenda.model.TimeBlock;
 import dev.personalagenda.data.Database;
 import dev.personalagenda.data.TaskRepository;
 import dev.personalagenda.data.TimeBlockRepository;
+import dev.personalagenda.data.CategoryRepository;
 import dev.personalagenda.view.TimelineView;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.Objects;
 import java.sql.SQLException;
 import java.time.LocalDate;
@@ -22,6 +25,9 @@ import javafx.geometry.Insets;
 import javafx.scene.Scene;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.ColorPicker;
+import javafx.scene.control.MenuButton;
+import javafx.scene.control.MenuItem;
 import javafx.scene.layout.VBox;
 import javafx.scene.control.TextField;
 import javafx.scene.control.Button;
@@ -33,14 +39,20 @@ import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SplitPane;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.HBox;
+import javafx.scene.paint.Color;
 import javafx.stage.Stage;
 
 public class App extends Application {
+
+    private final CategoryRepository categoryRepository = new CategoryRepository();
+
+    private final Map<String, String> categoryColors = new LinkedHashMap<>();
 
     @Override
     public void start(Stage stage) throws Exception {
 
         Database.initialize();
+        categoryColors.putAll(categoryRepository.findAll());
         TaskRepository repository = new TaskRepository();
 
         System.out.println(
@@ -52,6 +64,13 @@ public class App extends Application {
 
         TextField taskInput = new TextField();
         taskInput.setPromptText("Enter a task: ");
+        ComboBox<String> taskCategoryInput = new ComboBox<>();
+
+        taskCategoryInput.getItems().setAll(
+                categoryColors.keySet());
+
+        taskCategoryInput.setValue("General");
+        taskCategoryInput.setPrefWidth(110);
 
         Button addButton = new Button("Add");
 
@@ -97,6 +116,9 @@ public class App extends Application {
 
             try {
                 repository.insert(newTask);
+                categoryRepository.assign(
+                        newTask.getId(),
+                        taskCategoryInput.getValue());
             } catch (SQLException e) {
                 e.printStackTrace();
                 return;
@@ -226,24 +248,121 @@ public class App extends Application {
         HBox inputRow = new HBox(
                 10, taskInput, durationInput, addButton);
 
+        inputRow.getChildren().add(taskCategoryInput);
+
         HBox dateRow = new HBox(
                 10, new Label("Planned date:"), plannedDateInput, backlogButton);
 
         HBox timeInputRow = new HBox(
                 8,
                 new Label("Start"), startTimeInput,
-                new Label("End"), endTimeInput,
-                nextDayInput);
+                new Label("End"), endTimeInput);
+
+        nextDayInput.setText("Ends next day (+1 day)");
 
         HBox blockInputRow = new HBox(
                 8, blockTitleInput, blockTypeInput, saveBlockButton);
 
         VBox scheduleEditor = new VBox(
-                8, scheduleHeader, timeInputRow,
+                8, scheduleHeader, timeInputRow, nextDayInput,
                 blockInputRow, blockStatus, new Label("Scheduled Activities"), scheduledBlocks);
+
+        Label categoryTitle = new Label("Task Categories");
+
+        ComboBox<String> colorCategoryInput = new ComboBox<>();
+        colorCategoryInput.getItems().setAll(categoryColors.keySet());
+        colorCategoryInput.setValue("General");
+
+        ColorPicker categoryColorPicker = new ColorPicker(
+                Color.web(categoryColors.get("General")));
+
+        colorCategoryInput.setOnAction(event -> {
+
+            String name = colorCategoryInput.getValue();
+
+            if (name != null && categoryColors.containsKey(name)) {
+                categoryColorPicker.setValue(
+                        Color.web(categoryColors.get(name)));
+            }
+        });
+
+        TextField newCategoryInput = new TextField();
+        newCategoryInput.setPromptText("New category name (optional)");
+
+        Button saveCategoryButton = new Button("Save Color");
+        Label categoryStatus = new Label();
+
+        saveCategoryButton.setOnAction(event -> {
+
+            String name = newCategoryInput.getText().trim();
+
+            if (name.isEmpty()) {
+                name = colorCategoryInput.getValue();
+            }
+
+            if (name == null || name.isBlank()) {
+                categoryStatus.setText("Choose a category.");
+                return;
+            }
+
+            Color color = categoryColorPicker.getValue();
+
+            String hex = String.format(
+                    "#%02X%02X%02X",
+                    (int) Math.round(color.getRed() * 255),
+                    (int) Math.round(color.getGreen() * 255),
+                    (int) Math.round(color.getBlue() * 255));
+
+            try {
+                categoryRepository.save(name, hex);
+
+                categoryColors.clear();
+                categoryColors.putAll(categoryRepository.findAll());
+
+                String selectedTaskCategory = taskCategoryInput.getValue();
+
+                taskCategoryInput.getItems().setAll(
+                        categoryColors.keySet());
+
+                taskCategoryInput.setValue(
+                        selectedTaskCategory == null
+                                ? name
+                                : selectedTaskCategory);
+
+                colorCategoryInput.getItems().setAll(
+                        categoryColors.keySet());
+                colorCategoryInput.setValue(name);
+
+                newCategoryInput.clear();
+                categoryStatus.setText("Saved: " + name);
+
+                refreshTaskList(
+                        tasks, taskList, progressLabel, progressBar,
+                        repository, viewFilter.getValue());
+
+            } catch (SQLException ex) {
+                categoryStatus.setText("Category save failed.");
+                ex.printStackTrace();
+            }
+        });
+
+        VBox categoryEditor = new VBox(
+                8,
+                categoryTitle,
+                new HBox(
+                        8, colorCategoryInput,
+                        categoryColorPicker,
+                        saveCategoryButton),
+                newCategoryInput,
+                categoryStatus);
 
         VBox mainColumn = new VBox(16, title, inputRow, dateRow, new Label("View: "), viewFilter, taskList,
                 progressLabel, progressBar, scheduleEditor);
+
+        int scheduleIndex = mainColumn.getChildren().indexOf(scheduleEditor);
+
+        mainColumn.getChildren().add(
+                scheduleIndex, categoryEditor);
 
         ScrollPane checklistPane = new ScrollPane(mainColumn);
         checklistPane.setFitToWidth(true);
@@ -477,6 +596,50 @@ public class App extends Application {
 
         HBox taskRow = new HBox(
                 12, checkBox, durationLabel, taskDateInput, clearDateButton, deleteButton);
+
+        String categoryName = "General";
+
+        try {
+            categoryName = categoryRepository.findForTask(
+                    task.getId());
+        } catch (SQLException ex) {
+            ex.printStackTrace();
+        }
+
+        MenuButton categoryButton = new MenuButton(categoryName);
+        categoryButton.setPrefWidth(110);
+
+        String colorHex = categoryColors.getOrDefault(
+                categoryName, "#E7ECF3");
+
+        categoryButton.setStyle(
+                "-fx-background-color: " + colorHex + ";" +
+                        "-fx-background-radius: 9px;");
+
+        for (String name : categoryColors.keySet()) {
+
+            MenuItem item = new MenuItem(name);
+
+            item.setOnAction(event -> {
+
+                try {
+                    categoryRepository.assign(
+                            task.getId(), name);
+
+                    refreshTaskList(
+                            tasks, taskList,
+                            progressLabel, progressBar,
+                            repository, filter);
+
+                } catch (SQLException ex) {
+                    ex.printStackTrace();
+                }
+            });
+
+            categoryButton.getItems().add(item);
+        }
+
+        taskRow.getChildren().add(1, categoryButton);
 
         taskRow.getStyleClass().add("task-row");
 
