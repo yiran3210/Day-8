@@ -33,9 +33,13 @@ public class TimelineView extends VBox {
 
     public TimelineView() {
 
+        nowLine.endXProperty().bind(
+                canvas.widthProperty().subtract(10));
+
         Label heading = new Label("24h Schedule");
 
         canvas.setPrefSize(320, 24 * HOUR_HEIGHT + 20);
+        canvas.setMinWidth(0);
 
         ScrollPane scrollPane = new ScrollPane(canvas);
         scrollPane.setFitToWidth(true);
@@ -45,8 +49,8 @@ public class TimelineView extends VBox {
         VBox.setVgrow(scrollPane, Priority.ALWAYS);
 
         setSpacing(10);
-        setPrefWidth(320);
-        setMinWidth(320);
+        setPrefWidth(360);
+        setMinWidth(240);
 
         currentStatus.setWrapText(true);
         nextStatus.setWrapText(true);
@@ -78,6 +82,9 @@ public class TimelineView extends VBox {
             timeLabel.setLayoutY(y);
 
             Line line = new Line(56, y, 280, y);
+            line.endXProperty().bind(
+                    canvas.widthProperty().subtract(10));
+
             line.setStroke(Color.LIGHTGRAY);
 
             canvas.getChildren().addAll(timeLabel, line);
@@ -113,7 +120,10 @@ public class TimelineView extends VBox {
 
             eventLabel.setLayoutX(64);
             eventLabel.setLayoutY(y);
-            eventLabel.setPrefSize(240, height);
+            eventLabel.setPrefHeight(height);
+
+            eventLabel.prefWidthProperty().bind(
+                    canvas.widthProperty().subtract(72));
             eventLabel.setMinHeight(0);
             eventLabel.setWrapText(true);
 
@@ -156,7 +166,6 @@ public class TimelineView extends VBox {
         double y = minutes / 60.0 * HOUR_HEIGHT;
 
         nowLine.setStartX(56);
-        nowLine.setEndX(280);
         nowLine.setStartY(y);
         nowLine.setEndY(y);
         nowLine.setStroke(Color.web("#893030"));

@@ -30,6 +30,7 @@ import javafx.scene.control.ProgressBar;
 import javafx.scene.control.DatePicker;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.SplitPane;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.HBox;
 import javafx.stage.Stage;
@@ -125,9 +126,27 @@ public class App extends Application {
 
         VBox scheduledBlocks = new VBox(8);
 
-        refreshSchedule(blockRepository, timeline, scheduledBlocks, LocalDate.now());
+        DatePicker scheduleDateInput = new DatePicker(LocalDate.now());
 
-        Label scheduleTitle = new Label("Add Schedule - Today");
+        refreshSchedule(blockRepository, timeline, scheduledBlocks, scheduleDateInput.getValue());
+
+        scheduleDateInput.valueProperty().addListener((observable, oldDate, newDate) -> {
+
+            if (newDate == null) {
+                scheduleDateInput.setValue(oldDate);
+                return;
+            }
+
+            try {
+                refreshSchedule(blockRepository, timeline, scheduledBlocks, newDate);
+            } catch (SQLException ex) {
+                ex.printStackTrace();
+            }
+        });
+
+        Label scheduleTitle = new Label("Schedule");
+
+        HBox scheduleHeader = new HBox(12, scheduleTitle, scheduleDateInput);
 
         TextField blockTitleInput = new TextField();
         blockTitleInput.setPromptText("Activity name");
@@ -158,7 +177,13 @@ public class App extends Application {
             }
 
             try {
-                LocalDate today = LocalDate.now();
+
+                LocalDate today = scheduleDateInput.getValue();
+
+                if (today == null) {
+                    blockStatus.setText("Please select a date.");
+                    return;
+                }
 
                 LocalDateTime start = today.atTime(
                         LocalTime.parse(startTimeInput.getText().trim()));
@@ -214,7 +239,7 @@ public class App extends Application {
                 8, blockTitleInput, blockTypeInput, saveBlockButton);
 
         VBox scheduleEditor = new VBox(
-                8, scheduleTitle, timeInputRow,
+                8, scheduleHeader, timeInputRow,
                 blockInputRow, blockStatus, new Label("Scheduled Activities"), scheduledBlocks);
 
         VBox mainColumn = new VBox(16, title, inputRow, dateRow, new Label("View: "), viewFilter, taskList,
@@ -222,15 +247,17 @@ public class App extends Application {
 
         ScrollPane checklistPane = new ScrollPane(mainColumn);
         checklistPane.setFitToWidth(true);
+        checklistPane.setMinWidth(400);
 
-        HBox layout = new HBox(
-                16, checklistPane, timeline);
+        SplitPane layout = new SplitPane(
+                checklistPane,
+                timeline);
 
+        layout.setDividerPositions(0.62);
+        layout.setPadding(new Insets(20));
         layout.getStyleClass().add("app-root");
         mainColumn.getStyleClass().add("content-card");
         timeline.getStyleClass().add("timeline-card");
-
-        layout.setPadding(new Insets(20));
 
         Scene scene = new Scene(layout, 800, 640);
 
@@ -256,9 +283,30 @@ public class App extends Application {
 
         for (TimeBlock block : blocks) {
 
+            String timeText = block.start().toLocalTime()
+                    + "–"
+                    + block.end().toLocalTime();
+
+            if (!block.start().toLocalDate()
+                    .equals(block.end().toLocalDate())) {
+
+                timeText += " (+next day)";
+            }
+
             Label label = new Label(
-                    block.title() + " | "
-                            + block.start() + " → " + block.end());
+                    timeText + "  ·  " + block.title());
+
+            label.setMinWidth(0);
+            label.setMaxWidth(Double.MAX_VALUE);
+            label.setTextOverrun(
+                    javafx.scene.control.OverrunStyle.ELLIPSIS);
+
+            label.setTooltip(new javafx.scene.control.Tooltip(
+                    block.title() + "\n"
+                            + block.start() + " → " + block.end()));
+
+            HBox.setHgrow(label, Priority.ALWAYS);
+
             Button editButton = new Button("Edit");
             Button deleteButton = new Button("×");
 

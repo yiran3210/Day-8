@@ -101,3 +101,18 @@
     -fx-background-color: #ECEFF3;
     -fx-text-fill: #687487;
 }
+
+/* Resizable layout */
+.split-pane {
+    -fx-background-color: transparent;
+}
+
+.split-pane>.split-pane-divider {
+    -fx-background-color: #DFE7F0;
+    -fx-padding: 0 4px;
+}
+
+/* Schedule list */
+.tooltip {
+    -fx-font-size: 12px;
+}
