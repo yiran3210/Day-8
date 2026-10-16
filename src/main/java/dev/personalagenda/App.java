@@ -16,6 +16,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Spinner;
 import javafx.scene.control.ProgressBar;
 import javafx.scene.control.DatePicker;
+import javafx.scene.control.ComboBox;
 import javafx.scene.layout.HBox;
 import javafx.stage.Stage;
 
@@ -45,6 +46,10 @@ public class App extends Application {
 
         VBox taskList = new VBox(8);
 
+        ComboBox<String> viewFilter = new ComboBox<>();
+        viewFilter.getItems().addAll("Today", "Tomorrow", "Backlog", "Earlier", "All");
+        viewFilter.setValue("Today");
+
         Spinner<Integer> durationInput = new Spinner<>(15, 480, 60, 15);
         durationInput.setPrefWidth(100);
 
@@ -61,14 +66,11 @@ public class App extends Application {
         ProgressBar progressBar = new ProgressBar(0);
         progressBar.setPrefWidth(400);
 
-        for (Task savedTask : tasks) {
+        refreshTashList(tasks, taskList, progressLabel, progressBar, repository, viewFilter.getValue());
 
-            HBox taskRow = createTaskRow(savedTask, tasks, taskList, progressLabel, progressBar, repository);
-
-            taskList.getChildren().add(taskRow);
-        }
-
-        updateProgress(tasks, progressLabel, progressBar);
+        viewFilter.setOnAction(event -> {
+            refreshTashList(tasks, taskList, progressLabel, progressBar, repository, viewFilter.getValue());
+        });
 
         addButton.setOnAction(event -> {
 
@@ -91,10 +93,14 @@ public class App extends Application {
 
             tasks.add(newTask);
 
-            HBox taskRow = createTaskRow(
-                    newTask, tasks, taskList, progressLabel, progressBar, repository);
+            if (matchesFilter(newTask, viewFilter.getValue())) {
+                HBox taskRow = createTaskRow(
+                        newTask, tasks, taskList, progressLabel, progressBar, repository);
 
-            taskList.getChildren().add(taskRow);
+                taskList.getChildren().add(taskRow);
+            } else {
+                viewFilter.setValue("All");
+            }
 
             taskInput.clear();
 
@@ -110,7 +116,9 @@ public class App extends Application {
                 10, new Label("Planned date:"), plannedDateInput, backlogButton);
 
         VBox layout = new VBox(
-                16, title, inputRow, dateRow, taskList, progressLabel, progressBar);
+                16, title, inputRow, dateRow,
+                new Label("View:"), viewFilter,
+                taskList, progressLabel, progressBar);
         layout.setPadding(new Insets(24));
 
         Scene scene = new Scene(
@@ -120,6 +128,40 @@ public class App extends Application {
         stage.setScene(scene);
         stage.show();
 
+    }
+
+    private boolean matchesFilter(Task task, String filter) {
+
+        LocalDate date = task.getPlannedDate();
+        LocalDate today = LocalDate.now();
+
+        return switch (filter) {
+            case "Today" -> today.equals(date);
+            case "Tomorrow" -> today.plusDays(1).equals(date);
+            case "Backlog" -> date == null;
+            case "Earlier" -> date != null && date.isBefore(today);
+            case "All" -> true;
+            default -> false;
+        };
+    }
+
+    private void refreshTashList(
+            List<Task> tasks, VBox taskList, Label progressLabel, ProgressBar progressBar, TaskRepository repository,
+            String filter) {
+
+        taskList.getChildren().clear();
+
+        for (Task task : tasks) {
+            if (!matchesFilter(task, filter)) {
+                continue;
+            }
+
+            HBox row = createTaskRow(task, tasks, taskList, progressLabel, progressBar, repository);
+
+            taskList.getChildren().add(row);
+        }
+
+        updateProgress(tasks, progressLabel, progressBar);
     }
 
     private HBox createTaskRow(
@@ -192,7 +234,7 @@ public class App extends Application {
                 : (double) completed / total;
 
         progressLabel.setText(
-                completed + " / " + total + " completed");
+                "All tasks: " + completed + " / " + total + " completed");
 
         progressBar.setProgress(progress);
     }
