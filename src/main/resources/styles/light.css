@@ -190,3 +190,14 @@
 .project-card .button {
     -fx-background-radius: 8px;
 }
+
+.project-card .titled-pane>.title {
+    -fx-background-color: #E8EEF6;
+    -fx-background-radius: 9px;
+    -fx-padding: 9px 12px;
+}
+
+.project-card .titled-pane>.content {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+}

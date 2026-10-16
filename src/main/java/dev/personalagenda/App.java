@@ -154,6 +154,12 @@ public class App extends Application {
 
         TimelineView timeline = new TimelineView();
 
+        progressLabel.setWrapText(true);
+        progressBar.setMaxWidth(Double.MAX_VALUE);
+
+        timeline.getChildren().add(1, progressLabel);
+        timeline.getChildren().add(2, progressBar);
+
         TimeBlockRepository blockRepository = new TimeBlockRepository();
 
         VBox scheduledBlocks = new VBox(8);
@@ -441,8 +447,7 @@ public class App extends Application {
                 dateRow,
                 new Label("View:"),
                 viewFilter,
-                progressLabel,
-                progressBar, taskList);
+                taskList);
 
         VBox schedulePanel = new VBox(
                 16,
@@ -731,7 +736,7 @@ public class App extends Application {
         taskList.getChildren().clear();
 
         for (Task task : tasks) {
-            if (!matchesFilter(task, filter)) {
+            if (!matchesFilter(task, "Today")) {
                 continue;
             }
 
@@ -974,7 +979,7 @@ public class App extends Application {
                 : (double) completedMinutes / plannedMinutes;
 
         progressLabel.setText(
-                filter + ": "
+                "Today: "
                         + Math.round(progress * 100) + "%"
                         + " | Done: " + completedMinutes + "/" + plannedMinutes + " min"
                         + " | Remaining: " + remainingMinutes + " min"
