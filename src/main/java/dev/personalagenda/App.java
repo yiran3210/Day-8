@@ -19,12 +19,17 @@ import javafx.scene.control.Spinner;
 import javafx.scene.control.ProgressBar;
 import javafx.scene.control.DatePicker;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.ScrollPane;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.HBox;
 import javafx.stage.Stage;
 
 import dev.personalagenda.model.Task;
+import dev.personalagenda.model.TimeBlock;
 import dev.personalagenda.data.Database;
 import dev.personalagenda.data.TaskRepository;
+import dev.personalagenda.data.TimeBlockReposity;
+import dev.personalagenda.view.TimelineView;
 
 public class App extends Application {
 
@@ -111,20 +116,44 @@ public class App extends Application {
 
         taskInput.setOnAction(event -> addButton.fire());
 
+        TimelineView timeline = new TimelineView();
+
+        TimeBlockReposity blockReposity = new TimeBlockReposity();
+
+        // begin test timeline
+
+        LocalDate today = LocalDate.now();
+
+        TimeBlock demoBlock = new TimeBlock(
+                "Journal Paper Writing",
+                today.atTime(12, 0),
+                today.atTime(14, 0),
+                TimeBlock.Type.TASK,
+                null);
+
+        timeline.showDate(today, List.of(demoBlock));
+
+        // timeline.showDate(LocalDate.now(),
+        // blockReposity.findForDate(LocalDate.now()));
+
         HBox inputRow = new HBox(
                 10, taskInput, durationInput, addButton);
 
         HBox dateRow = new HBox(
                 10, new Label("Planned date:"), plannedDateInput, backlogButton);
 
-        VBox layout = new VBox(
-                16, title, inputRow, dateRow,
-                new Label("View:"), viewFilter,
-                taskList, progressLabel, progressBar);
-        layout.setPadding(new Insets(24));
+        VBox mainColumn = new VBox(16, title, inputRow, dateRow, new Label("View: "), viewFilter, taskList,
+                progressLabel, progressBar);
 
-        Scene scene = new Scene(
-                layout, 500, 400);
+        ScrollPane checklistPane = new ScrollPane(mainColumn);
+        checklistPane.setFitToWidth(true);
+
+        HBox layout = new HBox(
+                16, checklistPane, timeline);
+
+        layout.setPadding(new Insets(20));
+
+        Scene scene = new Scene(layout, 880, 640);
 
         stage.setTitle("Personal Agenda");
         stage.setScene(scene);
