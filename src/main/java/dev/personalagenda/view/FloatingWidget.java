@@ -4,6 +4,9 @@ package dev.personalagenda.view;
 import dev.personalagenda.data.TaskRepository;
 import dev.personalagenda.data.TaskStepRepository;
 import dev.personalagenda.data.TimeBlockRepository;
+import dev.personalagenda.data.ProjectRepository;
+import dev.personalagenda.data.CategoryRepository;
+import dev.personalagenda.model.Project;
 import dev.personalagenda.model.Task;
 import dev.personalagenda.model.TaskStep;
 import dev.personalagenda.model.TimeBlock;
@@ -13,7 +16,11 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.HashSet;
 
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
@@ -21,8 +28,10 @@ import javafx.geometry.Insets;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
+import javafx.scene.paint.Color;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
+import javafx.util.StringConverter;
 
 public class FloatingWidget {
 
@@ -39,8 +48,29 @@ public class FloatingWidget {
     private final Label dailyLabel = new Label();
     private final Label errorLabel = new Label();
 
-    private final ProgressBar timeBar = new ProgressBar(0);
-    private final ProgressBar dailyBar = new ProgressBar(0);
+    private final CompositeProgressBar dailyBar = new CompositeProgressBar();
+
+    private final CompositeProgressBar taskBar = new CompositeProgressBar();
+
+    private final CompositeProgressBar projectBar = new CompositeProgressBar();
+
+    private final Label taskProgressLabel = new Label();
+    private final Label projectProgressLabel = new Label();
+    private final Label projectExpectedLabel = new Label();
+    private final Label clockTimeLabel = new Label();
+
+    private final ClockFace clockFace = new ClockFace();
+
+    private final ComboBox<Task> focusTaskChoice = new ComboBox<>();
+
+    private final ComboBox<Project> clockProjectChoice = new ComboBox<>();
+
+    private final ProjectRepository projects = new ProjectRepository();
+
+    private final CategoryRepository categories = new CategoryRepository();
+
+    private boolean updatingFocusChoice = false;
+    private String manualFocusTaskId = null;
 
     private final VBox taskControls = new VBox(6);
 
@@ -60,25 +90,121 @@ public class FloatingWidget {
         window.setTitle("Agenda · Mini");
         window.setAlwaysOnTop(true);
         window.setMinWidth(280);
-        window.setMinHeight(240);
+        window.setMinHeight(480);
 
-        Label heading = new Label("Personal Agenda");
-        heading.setStyle("-fx-font-size: 16px; -fx-font-weight: bold;");
+        // begin change
 
+        Label heading = new Label("Agenda Mini");
+        heading.getStyleClass().add("mini-heading");
+
+        // Daily progress: always visible in both tabs
         Label todayTitle = new Label("Today's Progress");
 
-        timeBar.setMaxWidth(Double.MAX_VALUE);
-        dailyBar.setMaxWidth(Double.MAX_VALUE);
+        dailyBar.setColor(Color.web("#5F91BC"));
 
-        currentLabel.setWrapText(true);
-        nextLabel.setWrapText(true);
-        dailyLabel.setWrapText(true);
+        VBox dailySection = new VBox(
+                6, todayTitle, dailyBar, dailyLabel);
+        dailySection.getStyleClass().add("mini-card");
+
+        // Focus tab
+        Label focusTitle = new Label("Current Task");
+        focusTaskChoice.setMaxWidth(Double.MAX_VALUE);
+        focusTaskChoice.setPromptText("Choose focus task");
+
+        focusTaskChoice.setOnAction(event -> {
+            if (updatingFocusChoice) {
+                return;
+            }
+
+            Task selected = focusTaskChoice.getValue();
+            manualFocusTaskId = selected == null ? null : selected.getId();
+
+            refresh();
+        });
+
+        Button autoButton = new Button("Auto");
+        autoButton.setOnAction(event -> {
+            manualFocusTaskId = null;
+            refresh();
+        });
+
+        HBox focusPicker = new HBox(
+                6, focusTaskChoice, autoButton);
+        HBox.setHgrow(focusTaskChoice, Priority.ALWAYS);
+
+        taskBar.setColor(Color.web("#887ABD"));
 
         ScrollPane taskScroll = new ScrollPane(taskControls);
         taskScroll.setFitToWidth(true);
-        taskScroll.setPrefHeight(120);
-        taskScroll.setMaxHeight(140);
+        taskScroll.setPrefHeight(100);
+        taskScroll.setMaxHeight(120);
 
+        VBox focusContent = new VBox(
+                10,
+                currentLabel,
+                focusTitle,
+                focusPicker,
+                taskBar,
+                taskProgressLabel,
+                taskScroll,
+                new Separator(),
+                nextLabel);
+        focusContent.getStyleClass().add("mini-card");
+
+        // Clock tab
+        clockProjectChoice.setMaxWidth(Double.MAX_VALUE);
+
+        clockProjectChoice.setConverter(
+                new StringConverter<Project>() {
+
+                    @Override
+                    public String toString(Project project) {
+                        return project == null
+                                ? "Choose project"
+                                : project.name();
+                    }
+
+                    @Override
+                    public Project fromString(String value) {
+                        return null;
+                    }
+                });
+
+        clockProjectChoice.setOnAction(event -> {
+            try {
+                refreshProjectProgress(tasks.findAll());
+            } catch (SQLException ex) {
+                errorLabel.setText("Project load failed.");
+                ex.printStackTrace();
+            }
+        });
+
+        clockTimeLabel.getStyleClass().add("mini-clock-time");
+
+        VBox clockContent = new VBox(
+                10,
+                clockFace,
+                clockTimeLabel,
+                new Label("Project Progress"),
+                clockProjectChoice,
+                projectBar,
+                projectProgressLabel,
+                projectExpectedLabel);
+
+        clockContent.setAlignment(
+                javafx.geometry.Pos.TOP_CENTER);
+        clockContent.getStyleClass().add("mini-card");
+
+        // Two tabs
+        Tab focusTab = new Tab("Focus", focusContent);
+        Tab clockTab = new Tab("Clock", clockContent);
+
+        focusTab.setClosable(false);
+        clockTab.setClosable(false);
+
+        TabPane tabs = new TabPane(focusTab, clockTab);
+
+        // Footer
         Button openButton = new Button("Open Agenda");
         openButton.setOnAction(event -> {
             mainWindow.show();
@@ -86,26 +212,25 @@ public class FloatingWidget {
             mainWindow.toFront();
         });
 
-        Button refreshButton = new Button("Refresh");
+        Button refreshButton = new Button("↻");
         refreshButton.setOnAction(event -> refresh());
 
+        HBox footer = new HBox(
+                8, openButton, refreshButton);
+
         VBox root = new VBox(
-                10,
+                11,
                 heading,
-                todayTitle,
-                dailyBar,
-                dailyLabel,
-                new Separator(),
-                currentLabel,
-                timeBar,
-                nextLabel,
-                taskScroll,
+                dailySection,
+                tabs,
                 errorLabel,
-                new HBox(8, openButton, refreshButton));
+                footer);
 
-        root.setPadding(new Insets(16));
+        root.setPadding(new Insets(14));
+        root.getStyleClass().add("mini-widget");
 
-        Scene scene = new Scene(root, 320, 360);
+        Scene scene = new Scene(root, 370, 475);
+
         scene.getStylesheets().add(
                 getClass().getResource(
                         "/styles/light.css").toExternalForm());
@@ -166,8 +291,9 @@ public class FloatingWidget {
                 done += Math.min(taskDone, taskPlanned);
             }
 
-            dailyBar.setProgress(
-                    planned == 0 ? 0 : done / (double) planned);
+            dailyBar.setValues(
+                    planned == 0 ? 0 : done / (double) planned,
+                    0);
 
             dailyLabel.setText(
                     done + " / " + planned + " min completed");
@@ -197,7 +323,6 @@ public class FloatingWidget {
             }
 
             taskControls.getChildren().clear();
-            timeBar.setProgress(0);
 
             if (current == null) {
 
@@ -211,23 +336,51 @@ public class FloatingWidget {
                 double total = Duration.between(
                         current.start(), current.end()).toSeconds();
 
-                timeBar.setProgress(elapsed / total);
-
                 long remaining = (long) Math.ceil(
                         (total - elapsed) / 60.0);
 
                 currentLabel.setText(
-                        "Current: " + current.title()
-                                + " · " + remaining + " min left");
+                        "Now: " + current.title()
+                                + " · " + Math.round(elapsed / total * 100)
+                                + "% elapsed · " + remaining + " min left");
 
-                showLinkedTask(current, allTasks);
             }
+
+            updateFocusTask(current, allTasks, today);
 
             nextLabel.setText(
                     next == null
                             ? "Next: No upcoming activity"
                             : "Next: " + next.title()
                                     + " · " + next.start().toLocalTime());
+
+            clockFace.setTime(now.toLocalTime());
+
+            clockTimeLabel.setText(
+                    String.format(
+                            "%02d:%02d",
+                            now.getHour(),
+                            now.getMinute()));
+
+            String selectedProjectId = clockProjectChoice.getValue() == null
+                    ? null
+                    : clockProjectChoice.getValue().id();
+
+            List<Project> availableProjects = projects.findAll();
+
+            clockProjectChoice.getItems().setAll(availableProjects);
+
+            Project selectedProject = availableProjects.stream()
+                    .filter(project -> project.id().equals(selectedProjectId))
+                    .findFirst()
+                    .orElse(
+                            availableProjects.isEmpty()
+                                    ? null
+                                    : availableProjects.get(0));
+
+            clockProjectChoice.setValue(selectedProject);
+
+            refreshProjectProgress(allTasks);
 
             errorLabel.setText("");
 
@@ -237,18 +390,7 @@ public class FloatingWidget {
         }
     }
 
-    private void showLinkedTask(
-            TimeBlock block,
-            List<Task> allTasks) throws SQLException {
-
-        if (block.taskId() == null) {
-            return;
-        }
-
-        Task linkedTask = allTasks.stream()
-                .filter(task -> task.getId().equals(block.taskId()))
-                .findFirst()
-                .orElse(null);
+    private void showFocusedTask(Task linkedTask) throws SQLException {
 
         if (linkedTask == null) {
             return;
@@ -256,10 +398,34 @@ public class FloatingWidget {
 
         List<TaskStep> taskSteps = steps.findByTaskId(linkedTask.getId());
 
-        Label heading = new Label(
-                "Task: " + linkedTask.getTitle());
+        int allocated = taskSteps.stream()
+                .mapToInt(TaskStep::estimatedMinutes)
+                .sum();
 
-        taskControls.getChildren().add(heading);
+        int total = Math.max(
+                linkedTask.getEstimatedMinutes(),
+                allocated);
+
+        int completed = taskSteps.isEmpty()
+                ? (linkedTask.isCompleted() ? total : 0)
+                : taskSteps.stream()
+                        .filter(TaskStep::completed)
+                        .mapToInt(TaskStep::estimatedMinutes)
+                        .sum();
+
+        completed = Math.min(completed, total);
+
+        taskBar.setValues(
+                total == 0 ? 0 : completed / (double) total,
+                0);
+
+        taskProgressLabel.setText(
+                completed + " / " + total
+                        + " min · "
+                        + (total == 0
+                                ? 0
+                                : Math.round(completed * 100.0 / total))
+                        + "% completed");
 
         if (taskSteps.isEmpty()) {
 
@@ -302,22 +468,22 @@ public class FloatingWidget {
                         // Synchronize parent completion
                         List<TaskStep> updated = steps.findByTaskId(linkedTask.getId());
 
-                        int allocated = updated.stream()
+                        int updatedAllocated = updated.stream()
                                 .mapToInt(TaskStep::estimatedMinutes)
                                 .sum();
 
-                        int completed = updated.stream()
+                        int updatedCompleted = updated.stream()
                                 .filter(TaskStep::completed)
                                 .mapToInt(TaskStep::estimatedMinutes)
                                 .sum();
 
-                        int total = Math.max(
+                        int updatedTotal = Math.max(
                                 linkedTask.getEstimatedMinutes(),
-                                allocated);
+                                updatedAllocated);
 
                         tasks.updateCompleted(
                                 linkedTask.getId(),
-                                completed >= total);
+                                updatedCompleted >= updatedTotal);
 
                         onDataChanged.run();
                         refresh();
@@ -332,4 +498,145 @@ public class FloatingWidget {
             }
         }
     }
+
+    private void updateFocusTask(
+            TimeBlock current,
+            List<Task> allTasks,
+            LocalDate today) throws SQLException {
+
+        String preferredId = manualFocusTaskId;
+
+        if (preferredId == null && current != null) {
+            preferredId = current.taskId();
+        }
+
+        Task selected = null;
+
+        for (Task task : allTasks) {
+            if (task.getId().equals(preferredId)) {
+                selected = task;
+                break;
+            }
+        }
+
+        // Fallback: first unfinished task planned for today
+        if (selected == null) {
+            selected = allTasks.stream()
+                    .filter(task -> today.equals(task.getPlannedDate())
+                            && !task.isCompleted())
+                    .findFirst()
+                    .orElse(null);
+        }
+
+        updatingFocusChoice = true;
+
+        try {
+            focusTaskChoice.getItems().setAll(allTasks);
+            focusTaskChoice.setValue(selected);
+        } finally {
+            updatingFocusChoice = false;
+        }
+
+        taskControls.getChildren().clear();
+
+        if (selected == null) {
+            taskBar.setValues(0, 0);
+            taskProgressLabel.setText("No focus task selected.");
+            return;
+        }
+
+        showFocusedTask(selected);
+    }
+
+    private void refreshProjectProgress(
+            List<Task> allTasks) throws SQLException {
+
+        Project project = clockProjectChoice.getValue();
+
+        if (project == null) {
+            projectBar.setValues(0, 0);
+            projectBar.setExpected(0);
+            projectProgressLabel.setText("No project selected");
+            projectExpectedLabel.setText("");
+            return;
+        }
+
+        Set<String> ids = new HashSet<>(
+                projects.findTaskIds(project.id()));
+
+        int total = 0;
+        int done = 0;
+        int todayPending = 0;
+
+        for (Task task : allTasks) {
+
+            if (!ids.contains(task.getId())) {
+                continue;
+            }
+
+            List<TaskStep> taskSteps = steps.findByTaskId(task.getId());
+
+            int allocated = taskSteps.stream()
+                    .mapToInt(TaskStep::estimatedMinutes)
+                    .sum();
+
+            int planned = Math.max(
+                    task.getEstimatedMinutes(), allocated);
+
+            int completed = taskSteps.isEmpty()
+                    ? (task.isCompleted() ? planned : 0)
+                    : taskSteps.stream()
+                            .filter(TaskStep::completed)
+                            .mapToInt(TaskStep::estimatedMinutes)
+                            .sum();
+
+            completed = Math.min(completed, planned);
+
+            total += planned;
+            done += completed;
+
+            if (LocalDate.now().equals(task.getPlannedDate())) {
+                todayPending += planned - completed;
+            }
+        }
+
+        double actual = total == 0
+                ? 0
+                : done / (double) total;
+
+        double pending = total == 0
+                ? 0
+                : todayPending / (double) total;
+
+        long duration = ChronoUnit.DAYS.between(
+                project.startDate(), project.dueDate());
+
+        long elapsed = ChronoUnit.DAYS.between(
+                project.startDate(), LocalDate.now());
+
+        double expected = Math.max(
+                0, Math.min(1, elapsed / (double) duration));
+
+        Map<String, String> colors = categories.findAll();
+
+        projectBar.setColor(Color.web(
+                colors.getOrDefault(
+                        project.categoryName(), "#5F91BC")));
+
+        projectBar.setValues(actual, pending);
+        projectBar.setExpected(expected);
+
+        projectProgressLabel.setText(
+                total == 0
+                        ? "No tasks assigned"
+                        : done + "/" + total
+                                + " min done · " + todayPending
+                                + " min today pending");
+
+        projectExpectedLabel.setText(
+                "Actual " + Math.round(actual * 100)
+                        + "% · Expected "
+                        + Math.round(expected * 100) + "%");
+    }
+
 }

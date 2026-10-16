@@ -218,3 +218,44 @@
     -fx-background-radius: 8px;
     -fx-padding: 5px;
 }
+
+/* Compact floating widget */
+.mini-widget {
+    -fx-background-color: #F3F6FA;
+    -fx-font-size: 12px;
+}
+
+.mini-heading {
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #263B53;
+}
+
+.mini-card {
+    -fx-background-color: #FFFFFF;
+    -fx-background-radius: 12px;
+    -fx-padding: 12px;
+}
+
+.mini-widget .label {
+    -fx-text-fill: #334155;
+}
+
+.mini-widget .check-box {
+    -fx-text-fill: #334155;
+}
+
+.mini-widget .scroll-pane {
+    -fx-background-color: transparent;
+    -fx-background: transparent;
+}
+
+.mini-clock-time {
+    -fx-font-size: 24px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #263B53;
+}
+
+.mini-widget .tab-pane>.tab-header-area .tab-header-background {
+    -fx-background-color: transparent;
+}
