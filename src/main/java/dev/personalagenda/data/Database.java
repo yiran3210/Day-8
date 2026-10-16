@@ -52,6 +52,17 @@ public class Database {
 
                 System.out.println("Added planned_date column");
             }
+
+            String timeBlockSql = """
+                    CREATE TABLE IF NOT EXISTS time_blocks (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    start_time TEXT NOT NULL,
+                    end_time TEXT NOT NULL, type TEXT NOT NULL,
+                    task_id TEXT)
+                    """;
+
+            statement.executeUpdate(timeBlockSql);
         }
 
         System.out.println("Database initialized: " + DB_PATH);
