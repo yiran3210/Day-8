@@ -1,10 +1,20 @@
 package dev.personalagenda;
 
+import dev.personalagenda.model.Task;
+import dev.personalagenda.model.TimeBlock;
+import dev.personalagenda.data.Database;
+import dev.personalagenda.data.TaskRepository;
+import dev.personalagenda.data.TimeBlockRepository;
+import dev.personalagenda.view.TimelineView;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.sql.SQLException;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.format.DateTimeParseException;
 
 import javafx.application.Application;
 import javafx.application.Platform;
@@ -23,13 +33,6 @@ import javafx.scene.control.ScrollPane;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.HBox;
 import javafx.stage.Stage;
-
-import dev.personalagenda.model.Task;
-import dev.personalagenda.model.TimeBlock;
-import dev.personalagenda.data.Database;
-import dev.personalagenda.data.TaskRepository;
-import dev.personalagenda.data.TimeBlockReposity;
-import dev.personalagenda.view.TimelineView;
 
 public class App extends Application {
 
@@ -118,23 +121,83 @@ public class App extends Application {
 
         TimelineView timeline = new TimelineView();
 
-        TimeBlockReposity blockReposity = new TimeBlockReposity();
+        TimeBlockRepository blockRepository = new TimeBlockRepository();
 
-        // begin test timeline
+        timeline.showDate(LocalDate.now(),
+                blockRepository.findForDate(LocalDate.now()));
 
-        LocalDate today = LocalDate.now();
+        Label scheduleTitle = new Label("Add Schedule - Today");
 
-        TimeBlock demoBlock = new TimeBlock(
-                "reply email",
-                today.atTime(12, 0),
-                today.atTime(14, 0),
-                TimeBlock.Type.TASK,
-                null);
+        TextField blockTitleInput = new TextField();
+        blockTitleInput.setPromptText("Activity name");
 
-        timeline.showDate(today, List.of(demoBlock));
+        TextField startTimeInput = new TextField("16:00");
+        TextField endTimeInput = new TextField("17:00");
 
-        // timeline.showDate(LocalDate.now(),
-        // blockReposity.findForDate(LocalDate.now()));
+        startTimeInput.setPrefColumnCount(5);
+        endTimeInput.setPrefColumnCount(5);
+
+        ComboBox<TimeBlock.Type> blockTypeInput = new ComboBox<>();
+        blockTypeInput.getItems().addAll(TimeBlock.Type.values());
+        blockTypeInput.setValue(TimeBlock.Type.TASK);
+
+        CheckBox nextDayInput = new CheckBox("Ends next day");
+
+        Button saveBlockButton = new Button("Schedule");
+
+        Label blockStatus = new Label();
+
+        saveBlockButton.setOnAction(event -> {
+
+            String titleText = blockTitleInput.getText().trim();
+
+            if (titleText.isEmpty()) {
+                blockStatus.setText("Enter an activity name.");
+                return;
+            }
+
+            try {
+                LocalDate today = LocalDate.now();
+
+                LocalDateTime start = today.atTime(
+                        LocalTime.parse(startTimeInput.getText().trim()));
+
+                LocalDateTime end = today.atTime(
+                        LocalTime.parse(endTimeInput.getText().trim()));
+
+                if (nextDayInput.isSelected()) {
+                    end = end.plusDays(1);
+                }
+
+                if (!end.isAfter(start)) {
+                    blockStatus.setText(
+                            "End must be after start.");
+                    return;
+                }
+
+                TimeBlock block = new TimeBlock(
+                        titleText,
+                        start,
+                        end,
+                        blockTypeInput.getValue(),
+                        null);
+
+                blockRepository.insert(block);
+
+                timeline.showDate(
+                        today,
+                        blockRepository.findForDate(today));
+
+                blockTitleInput.clear();
+                blockStatus.setText("Scheduled: " + titleText);
+
+            } catch (DateTimeParseException ex) {
+                blockStatus.setText("Use time format HH:mm.");
+            } catch (SQLException ex) {
+                blockStatus.setText("Database save failed.");
+                ex.printStackTrace();
+            }
+        });
 
         HBox inputRow = new HBox(
                 10, taskInput, durationInput, addButton);
@@ -142,8 +205,21 @@ public class App extends Application {
         HBox dateRow = new HBox(
                 10, new Label("Planned date:"), plannedDateInput, backlogButton);
 
+        HBox timeInputRow = new HBox(
+                8,
+                new Label("Start"), startTimeInput,
+                new Label("End"), endTimeInput,
+                nextDayInput);
+
+        HBox blockInputRow = new HBox(
+                8, blockTitleInput, blockTypeInput, saveBlockButton);
+
+        VBox scheduleEditor = new VBox(
+                8, scheduleTitle, timeInputRow,
+                blockInputRow, blockStatus);
+
         VBox mainColumn = new VBox(16, title, inputRow, dateRow, new Label("View: "), viewFilter, taskList,
-                progressLabel, progressBar);
+                progressLabel, progressBar, scheduleEditor);
 
         ScrollPane checklistPane = new ScrollPane(mainColumn);
         checklistPane.setFitToWidth(true);

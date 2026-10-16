@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-public class TimeBlockReposity {
+public class TimeBlockRepository {
 
     public void insert(TimeBlock block) throws SQLException {
 
