@@ -99,15 +99,55 @@ public class TaskStepRepository {
         }
     }
 
-    public void delete(String id) throws SQLException {
+    public void updateDetails(
+            String id, String title, int minutes) throws SQLException {
 
-        String sql = "DELETE FROM task_steps WHERE id = ?";
+        String sql = """
+                UPDATE task_steps
+                SET title = ?, estimated_minutes = ?
+                WHERE id = ?
+                """;
 
         try (Connection conn = Database.connect();
                 PreparedStatement stmt = conn.prepareStatement(sql)) {
 
-            stmt.setString(1, id);
+            stmt.setString(1, title);
+            stmt.setInt(2, minutes);
+            stmt.setString(3, id);
+
             stmt.executeUpdate();
+        }
+    }
+
+    public void delete(String id) throws SQLException {
+
+        try (Connection conn = Database.connect()) {
+
+            conn.setAutoCommit(false);
+
+            try {
+                // Keep schedule history, remove Step reference
+                try (PreparedStatement stmt = conn.prepareStatement(
+                        "UPDATE time_blocks SET step_id = NULL WHERE step_id = ?")) {
+
+                    stmt.setString(1, id);
+                    stmt.executeUpdate();
+                }
+
+                // Delete Step itself
+                try (PreparedStatement stmt = conn.prepareStatement(
+                        "DELETE FROM task_steps WHERE id = ?")) {
+
+                    stmt.setString(1, id);
+                    stmt.executeUpdate();
+                }
+
+                conn.commit();
+
+            } catch (SQLException ex) {
+                conn.rollback();
+                throw ex;
+            }
         }
     }
 }

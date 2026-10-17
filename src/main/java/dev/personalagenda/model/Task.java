@@ -6,8 +6,8 @@ import java.time.LocalDate;
 public class Task {
 
     private final String id;
-    private final String title;
-    private final int estimatedMinutes;
+    private String title;
+    private int estimatedMinutes;
     private boolean completed;
     private LocalDate plannedDate;
 
@@ -32,6 +32,20 @@ public class Task {
 
     public int getEstimatedMinutes() {
         return estimatedMinutes;
+    }
+
+    public void setTitle(String title) {
+        if (title == null || title.isBlank()) {
+            throw new IllegalArgumentException("Task title is required");
+        }
+        this.title = title.trim();
+    }
+
+    public void setEstimatedMinutes(int minutes) {
+        if (minutes <= 0) {
+            throw new IllegalArgumentException("Minutes must be positive");
+        }
+        this.estimatedMinutes = minutes;
     }
 
     public boolean isCompleted() {

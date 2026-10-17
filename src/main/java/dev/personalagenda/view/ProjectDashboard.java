@@ -225,6 +225,8 @@ public class ProjectDashboard extends VBox {
 
                                 Button assignButton = new Button("Assign");
 
+                                assignButton.setMinWidth(Region.USE_PREF_SIZE);
+
                                 assignButton.setOnAction(event -> {
                                         Task selected = taskInput.getValue();
                                         if (selected == null) {
@@ -245,6 +247,9 @@ public class ProjectDashboard extends VBox {
                                                 8, taskInput, assignButton);
                                 HBox.setHgrow(taskInput, Priority.ALWAYS);
 
+                                taskInput.setMinWidth(0);
+                                assignment.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+
                                 int assignedCount = assignedRows.getChildren().size();
 
                                 VBox taskManagement = new VBox(
@@ -260,6 +265,8 @@ public class ProjectDashboard extends VBox {
                                 tasksPane.setAnimated(false);
 
                                 Button editProjectButton = new Button("Edit");
+
+                                Button deleteProjectButton = new Button("Delete");
 
                                 TextField projectNameEdit = new TextField(project.name());
 
@@ -325,10 +332,61 @@ public class ProjectDashboard extends VBox {
                                         }
                                 });
 
+                                deleteProjectButton.setOnAction(event -> {
+
+                                        Alert confirmation = new Alert(Alert.AlertType.CONFIRMATION);
+
+                                        confirmation.setGraphic(null);
+
+                                        confirmation.getDialogPane().getStylesheets().add(
+                                                        getClass().getResource("/styles/light.css").toExternalForm());
+
+                                        confirmation.getDialogPane()
+                                                        .getStyleClass().add("agenda-confirmation");
+
+                                        confirmation.setTitle("Delete Project");
+                                        confirmation.setHeaderText(
+                                                        "Delete project: " + project.name() + "?");
+
+                                        confirmation.setContentText(
+                                                        "The project will be permanently deleted.\n"
+                                                                        + "Associated tasks, steps and scheduled activities will be kept.");
+
+                                        ButtonType deleteChoice = new ButtonType(
+                                                        "Delete Project",
+                                                        ButtonBar.ButtonData.OK_DONE);
+
+                                        confirmation.getButtonTypes().setAll(
+                                                        deleteChoice, ButtonType.CANCEL);
+
+                                        Button dangerButton = (Button) confirmation
+                                                        .getDialogPane().lookupButton(deleteChoice);
+
+                                        dangerButton.getStyleClass().add("danger-action");
+                                        ButtonType result = confirmation.showAndWait()
+                                                        .orElse(ButtonType.CANCEL);
+
+                                        if (result != deleteChoice) {
+                                                return;
+                                        }
+
+                                        try {
+                                                projects.delete(project.id());
+                                                refresh();
+
+                                        } catch (SQLException ex) {
+                                                status.setText("Unable to delete project.");
+                                                ex.printStackTrace();
+                                        }
+                                });
+
                                 Label projectNameLabel = new Label(project.name());
 
                                 HBox projectHeader = new HBox(
-                                                12, projectNameLabel, editProjectButton);
+                                                12,
+                                                projectNameLabel,
+                                                editProjectButton,
+                                                deleteProjectButton);
 
                                 VBox card = new VBox(
                                                 10,

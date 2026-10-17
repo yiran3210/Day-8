@@ -501,3 +501,44 @@
     -fx-border-radius: 0 0 10px 10px;
     -fx-padding: 12px;
 }
+
+/* Project deletion confirmation */
+.dialog-pane.agenda-confirmation {
+    -fx-background-color: #FFFFFF;
+    -fx-border-color: #DFE7F0;
+    -fx-border-radius: 14px;
+    -fx-background-radius: 14px;
+    -fx-padding: 10px;
+}
+
+.dialog-pane.agenda-confirmation>.header-panel {
+    -fx-background-color: transparent;
+}
+
+.dialog-pane.agenda-confirmation>.header-panel .label {
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #243B56;
+}
+
+.dialog-pane.agenda-confirmation .button.danger-action {
+    -fx-background-color: #B94D50;
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+}
+
+.dialog-pane.agenda-confirmation .button.danger-action:hover {
+    -fx-background-color: #A73B40;
+}
+
+/* Day Plan option checkboxes */
+.check-box.schedule-option {
+    -fx-text-fill: #334155;
+    -fx-font-size: 13px;
+    -fx-opacity: 1.0;
+}
+
+.check-box.schedule-option:disabled {
+    -fx-text-fill: #64748B;
+    -fx-opacity: 1.0;
+}

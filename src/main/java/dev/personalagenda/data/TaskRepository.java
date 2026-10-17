@@ -102,16 +102,77 @@ public class TaskRepository {
         }
     }
 
-    public void delete(String id) throws SQLException {
+    public void updateDetails(
+            String id, String title, int minutes) throws SQLException {
 
         String sql = """
-                DELETE FROM tasks
+                UPDATE tasks
+                SET title = ?, estimated_minutes = ?
                 WHERE id = ?
                 """;
 
         try (Connection conn = Database.connect();
                 PreparedStatement stmt = conn.prepareStatement(sql)) {
 
+            stmt.setString(1, title);
+            stmt.setInt(2, minutes);
+            stmt.setString(3, id);
+
+            stmt.executeUpdate();
+        }
+    }
+
+    public boolean exists(String id) throws SQLException {
+
+        String sql = "SELECT 1 FROM tasks WHERE id = ?";
+
+        try (Connection conn = Database.connect();
+                PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setString(1, id);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+    public void delete(String id) throws SQLException {
+
+        try (Connection conn = Database.connect()) {
+
+            conn.setAutoCommit(false);
+
+            try {
+                executeForTask(conn,
+                        "UPDATE time_blocks SET task_id = NULL, step_id = NULL WHERE task_id = ?", id);
+
+                executeForTask(conn,
+                        "DELETE FROM task_steps WHERE task_id = ?", id);
+
+                executeForTask(conn,
+                        "DELETE FROM task_category_links WHERE task_id = ?", id);
+
+                executeForTask(conn,
+                        "DELETE FROM task_project_links WHERE task_id = ?", id);
+
+                executeForTask(conn,
+                        "DELETE FROM tasks WHERE id = ?", id);
+
+                conn.commit();
+
+            } catch (SQLException ex) {
+                conn.rollback();
+                throw ex;
+            }
+        }
+    }
+
+    private void executeForTask(
+            Connection conn, String sql, String id)
+            throws SQLException {
+
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, id);
             stmt.executeUpdate();
         }

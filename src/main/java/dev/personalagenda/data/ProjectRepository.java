@@ -137,4 +137,36 @@ public class ProjectRepository {
             stmt.executeUpdate();
         }
     }
+
+    public void delete(String projectId) throws SQLException {
+
+        try (Connection conn = Database.connect()) {
+
+            conn.setAutoCommit(false);
+
+            try {
+                // 1. Remove task-project relationships.
+                try (PreparedStatement stmt = conn.prepareStatement(
+                        "DELETE FROM task_project_links WHERE project_id = ?")) {
+
+                    stmt.setString(1, projectId);
+                    stmt.executeUpdate();
+                }
+
+                // 2. Delete the project itself.
+                try (PreparedStatement stmt = conn.prepareStatement(
+                        "DELETE FROM projects WHERE id = ?")) {
+
+                    stmt.setString(1, projectId);
+                    stmt.executeUpdate();
+                }
+
+                conn.commit();
+
+            } catch (SQLException ex) {
+                conn.rollback();
+                throw ex;
+            }
+        }
+    }
 }

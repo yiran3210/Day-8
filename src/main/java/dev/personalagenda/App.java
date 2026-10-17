@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Objects;
+import java.util.function.BiConsumer;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -52,6 +53,8 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.Region;
+import javafx.scene.layout.GridPane;
+import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.paint.Color;
 import javafx.stage.Stage;
 import javafx.scene.Scene;
@@ -63,6 +66,8 @@ public class App extends Application {
     private final Map<String, String> categoryColors = new LinkedHashMap<>();
 
     private final TaskStepRepository taskStepRepository = new TaskStepRepository();
+
+    private BiConsumer<Task, TaskStep> scheduleRequest;
 
     @Override
     public void start(Stage stage) throws Exception {
@@ -222,6 +227,12 @@ public class App extends Application {
 
         ComboBox<Task> linkedTaskInput = new ComboBox<>();
 
+        ComboBox<TaskStep> linkedStepInput = createStepCombo();
+
+        linkedStepInput.setOnShowing(event -> reloadTaskSteps(
+                linkedStepInput,
+                linkedTaskInput.getValue()));
+
         linkedTaskInput.setPromptText("Choose an existing task");
         linkedTaskInput.setPrefWidth(200);
 
@@ -231,25 +242,48 @@ public class App extends Application {
                         ? null
                         : linkedTaskInput.getValue().getId();
 
-                linkedTaskInput.getItems().setAll(
-                        repository.findAll());
+                List<Task> available = repository.findAll();
 
-                if (selectedId != null) {
-                    linkedTaskInput.getItems().stream()
-                            .filter(task -> selectedId.equals(task.getId()))
-                            .findFirst()
-                            .ifPresent(linkedTaskInput::setValue);
-                }
+                linkedTaskInput.getItems().setAll(available);
+
+                Task selected = available.stream()
+                        .filter(task -> task.getId().equals(selectedId))
+                        .findFirst()
+                        .orElse(null);
+
+                linkedTaskInput.setValue(selected);
             } catch (SQLException ex) {
                 ex.printStackTrace();
             }
         });
 
+        Button wholeTaskButton = new Button("Whole task");
+
+        wholeTaskButton.setOnAction(event -> linkedStepInput.setValue(null));
+
+        HBox linkedStepRow = new HBox(
+                8,
+                new Label("Linked step"),
+                linkedStepInput,
+                wholeTaskButton);
+
+        linkedStepRow.setVisible(false);
+        linkedStepRow.setManaged(false);
+
         linkedTaskInput.valueProperty().addListener(
                 (observable, oldTask, newTask) -> {
+
+                    reloadTaskSteps(linkedStepInput, newTask);
+
                     if (newTask != null) {
                         blockTitleInput.setText(newTask.getTitle());
                     }
+
+                    boolean showStep = newTask != null
+                            && blockTypeInput.getValue() == TimeBlock.Type.TASK;
+
+                    linkedStepRow.setVisible(showStep);
+                    linkedStepRow.setManaged(showStep);
                 });
 
         HBox linkedTaskRow = new HBox(
@@ -268,6 +302,11 @@ public class App extends Application {
                     linkedTaskRow.setVisible(isTask);
                     linkedTaskRow.setManaged(isTask);
 
+                    boolean showStep = isTask && linkedTaskInput.getValue() != null;
+
+                    linkedStepRow.setVisible(showStep);
+                    linkedStepRow.setManaged(showStep);
+
                     if (!isTask) {
                         linkedTaskInput.setValue(null);
                     }
@@ -277,6 +316,80 @@ public class App extends Application {
 
         HBox nextDayRow = new HBox(8, nextDayInput);
         nextDayRow.setAlignment(Pos.CENTER_LEFT);
+
+        CheckBox autoEndInput = new CheckBox("Auto end from estimate");
+
+        autoEndInput.getStyleClass().add("schedule-option");
+        nextDayInput.getStyleClass().add("schedule-option");
+
+        autoEndInput.setSelected(true);
+
+        nextDayRow.getChildren().add(0, autoEndInput);
+
+        Runnable recalculateEnd = () -> {
+
+            if (!autoEndInput.isSelected()
+                    || blockTypeInput.getValue() != TimeBlock.Type.TASK
+                    || linkedTaskInput.getValue() == null
+                    || scheduleDateInput.getValue() == null) {
+                return;
+            }
+
+            int minutes = linkedStepInput.getValue() != null
+                    ? linkedStepInput.getValue().estimatedMinutes()
+                    : linkedTaskInput.getValue().getEstimatedMinutes();
+
+            if (minutes <= 0) {
+                return;
+            }
+
+            try {
+                LocalDateTime start = scheduleDateInput.getValue().atTime(
+                        LocalTime.parse(startTimeInput.getText().trim()));
+
+                LocalDateTime end = start.plusMinutes(minutes);
+
+                endTimeInput.setText(end.toLocalTime().toString());
+
+                nextDayInput.setSelected(
+                        end.toLocalDate().isAfter(start.toLocalDate()));
+
+            } catch (DateTimeParseException ex) {
+                // Wait until the user finishes entering a valid time.
+            }
+        };
+
+        Runnable updateAutoMode = () -> {
+
+            boolean active = autoEndInput.isSelected()
+                    && blockTypeInput.getValue() == TimeBlock.Type.TASK
+                    && linkedTaskInput.getValue() != null;
+
+            endTimeInput.setEditable(!active);
+            nextDayInput.setDisable(active);
+
+            recalculateEnd.run();
+        };
+
+        linkedTaskInput.valueProperty().addListener(
+                (obs, oldValue, newValue) -> updateAutoMode.run());
+
+        linkedStepInput.valueProperty().addListener(
+                (obs, oldValue, newValue) -> recalculateEnd.run());
+
+        startTimeInput.textProperty().addListener(
+                (obs, oldValue, newValue) -> recalculateEnd.run());
+
+        scheduleDateInput.valueProperty().addListener(
+                (obs, oldValue, newValue) -> recalculateEnd.run());
+
+        blockTypeInput.valueProperty().addListener(
+                (obs, oldValue, newValue) -> updateAutoMode.run());
+
+        autoEndInput.selectedProperty().addListener(
+                (obs, oldValue, newValue) -> updateAutoMode.run());
+
+        updateAutoMode.run();
 
         Button saveBlockButton = new Button("Day Plan");
         saveBlockButton.setText("Add Activity");
@@ -322,12 +435,35 @@ public class App extends Application {
                                 ? linkedTaskInput.getValue().getId()
                                 : null;
 
+                if (linkedTaskId != null && !repository.exists(linkedTaskId)) {
+                    linkedTaskInput.setValue(null);
+                    blockStatus.setText(
+                            "Linked task no longer exists. Please select another.");
+                    return;
+                }
+
+                String linkedStepId = linkedTaskId != null
+                        && linkedStepInput.getValue() != null
+                                ? linkedStepInput.getValue().id()
+                                : null;
+
+                if (linkedStepId != null
+                        && taskStepRepository.findByTaskId(linkedTaskId)
+                                .stream()
+                                .noneMatch(step -> step.id().equals(linkedStepId))) {
+
+                    blockStatus.setText("Linked step no longer exists.");
+                    reloadTaskSteps(linkedStepInput, linkedTaskInput.getValue());
+                    return;
+                }
+
                 TimeBlock block = new TimeBlock(
                         titleText,
                         start,
                         end,
                         blockTypeInput.getValue(),
-                        linkedTaskId);
+                        linkedTaskId,
+                        linkedStepId);
 
                 blockRepository.insert(block);
 
@@ -350,6 +486,13 @@ public class App extends Application {
 
         inputRow.getChildren().add(taskCategoryInput);
 
+        HBox.setHgrow(taskInput, Priority.ALWAYS);
+
+        taskInput.setMinWidth(120);
+        taskInput.setMaxWidth(Double.MAX_VALUE);
+
+        inputRow.setAlignment(Pos.CENTER_LEFT);
+
         HBox dateRow = new HBox(
                 10, new Label("Planned date:"), plannedDateInput, backlogButton);
 
@@ -360,8 +503,8 @@ public class App extends Application {
 
         nextDayInput.setText("Ends next day (+1 day)");
 
-        HBox blockInputRow = new HBox(
-                8, blockTitleInput, blockTypeInput, saveBlockButton);
+        // HBox blockInputRow = new HBox(
+        // 8, blockTitleInput, blockTypeInput, saveBlockButton);
 
         startTimeInput.setPrefWidth(105);
         endTimeInput.setPrefWidth(105);
@@ -372,18 +515,45 @@ public class App extends Application {
         blockTitleInput.setPrefWidth(230);
         blockTitleInput.setMinWidth(140);
 
-        HBox.setHgrow(blockTitleInput, Priority.ALWAYS);
+        // HBox.setHgrow(blockTitleInput, Priority.ALWAYS);
 
         blockTypeInput.setPrefWidth(115);
 
         linkedTaskInput.setPrefWidth(260);
 
+        GridPane scheduleFormGrid = new GridPane();
+        scheduleFormGrid.setHgap(14);
+        scheduleFormGrid.setVgap(12);
+
+        ColumnConstraints labelCol = new ColumnConstraints();
+        labelCol.setPrefWidth(100);
+
+        ColumnConstraints controlCol = new ColumnConstraints();
+        controlCol.setHgrow(Priority.ALWAYS);
+
+        ColumnConstraints labelCol2 = new ColumnConstraints();
+        labelCol2.setPrefWidth(64);
+
+        ColumnConstraints controlCol2 = new ColumnConstraints();
+        controlCol2.setHgrow(Priority.ALWAYS);
+
+        scheduleFormGrid.getColumnConstraints().addAll(
+                labelCol, controlCol, labelCol2, controlCol2);
+
+        scheduleFormGrid.add(new Label("Activity"), 0, 0);
+        scheduleFormGrid.add(blockTitleInput, 1, 0);
+
+        scheduleFormGrid.add(new Label("Type"), 2, 0);
+        scheduleFormGrid.add(blockTypeInput, 3, 0);
+
         VBox activityForm = new VBox(
                 10,
-                blockInputRow,
+                scheduleFormGrid,
                 timeInputRow,
                 nextDayRow,
                 linkedTaskRow,
+                linkedStepRow,
+                saveBlockButton,
                 blockStatus);
 
         TitledPane addActivityPane = new TitledPane(
@@ -411,8 +581,6 @@ public class App extends Application {
                 addActivityPane,
                 activitiesTitle,
                 scheduledBlocks);
-
-        Label categoryTitle = new Label("Task Categories");
 
         ComboBox<String> colorCategoryInput = new ComboBox<>();
         colorCategoryInput.getItems().setAll(categoryColors.keySet());
@@ -499,13 +667,19 @@ public class App extends Application {
 
         VBox categoryEditor = new VBox(
                 8,
-                categoryTitle,
                 new HBox(
                         8, colorCategoryInput,
                         categoryColorPicker,
                         saveCategoryButton),
                 newCategoryInput,
                 categoryStatus);
+
+        TitledPane categoryManager = new TitledPane(
+                "Manage Categories", categoryEditor);
+
+        categoryManager.setExpanded(false);
+        categoryManager.setAnimated(false);
+        categoryManager.setMaxWidth(Double.MAX_VALUE);
 
         Label quickAddTitle = new Label("Quick Add");
         Label taskListTitle = new Label("Task List");
@@ -532,6 +706,7 @@ public class App extends Application {
         VBox taskPanel = new VBox(
                 16,
                 taskComposer,
+                categoryManager,
                 taskToolbar,
                 taskList);
 
@@ -543,9 +718,7 @@ public class App extends Application {
 
         VBox categoryPanel = new VBox(
                 20,
-                projectDashboard,
-                new Separator(),
-                categoryEditor);
+                projectDashboard);
 
         taskPanel.getStyleClass().add("content-card");
         schedulePanel.getStyleClass().add("content-card");
@@ -566,6 +739,24 @@ public class App extends Application {
         Tab scheduleTab = new Tab("Day Plan", scheduleScroll);
         scheduleTab.setClosable(false);
 
+        scheduleTab.setOnSelectionChanged(event -> {
+
+            if (!scheduleTab.isSelected()) {
+                return;
+            }
+
+            try {
+                refreshSchedule(
+                        blockRepository,
+                        timeline,
+                        scheduledBlocks,
+                        scheduleDateInput.getValue());
+
+            } catch (SQLException ex) {
+                ex.printStackTrace();
+            }
+        });
+
         Tab categoryTab = new Tab("Projects", categoryScroll);
         categoryTab.setOnSelectionChanged(event -> {
             if (categoryTab.isSelected()) {
@@ -576,6 +767,77 @@ public class App extends Application {
 
         TabPane leftTabs = new TabPane(
                 taskTab, scheduleTab, categoryTab);
+
+        scheduleRequest = (requestedTask, requestedStep) -> {
+
+            leftTabs.getSelectionModel().select(scheduleTab);
+            addActivityPane.setExpanded(true);
+            scheduleScroll.setVvalue(0);
+
+            try {
+                List<Task> available = repository.findAll();
+
+                Task selectedTask = available.stream()
+                        .filter(t -> t.getId().equals(requestedTask.getId()))
+                        .findFirst()
+                        .orElse(null);
+
+                if (selectedTask == null) {
+                    blockStatus.setText("Task no longer exists.");
+                    return;
+                }
+
+                LocalDate targetDate = selectedTask.getPlannedDate();
+
+                if (targetDate == null
+                        || targetDate.isBefore(LocalDate.now())) {
+                    targetDate = LocalDate.now();
+                }
+
+                scheduleDateInput.setValue(targetDate);
+
+                blockTypeInput.setValue(TimeBlock.Type.TASK);
+
+                linkedTaskInput.getItems().setAll(available);
+                linkedTaskInput.setValue(selectedTask);
+
+                reloadTaskSteps(linkedStepInput, selectedTask);
+
+                if (requestedStep != null) {
+
+                    TaskStep selectedStep = linkedStepInput.getItems()
+                            .stream()
+                            .filter(s -> s.id().equals(requestedStep.id()))
+                            .findFirst()
+                            .orElse(null);
+
+                    if (selectedStep == null) {
+                        blockStatus.setText(
+                                "Step no longer exists. Please choose another.");
+                        return;
+                    }
+
+                    linkedStepInput.setValue(selectedStep);
+
+                    blockTitleInput.setText(
+                            selectedTask.getTitle() + " / " + selectedStep.title());
+
+                } else {
+                    linkedStepInput.setValue(null);
+                    blockTitleInput.setText(selectedTask.getTitle());
+                }
+
+                autoEndInput.setSelected(true);
+                recalculateEnd.run();
+
+                blockStatus.setText(
+                        "Ready to schedule. Choose the start time.");
+
+            } catch (SQLException ex) {
+                blockStatus.setText("Unable to load task.");
+                ex.printStackTrace();
+            }
+        };
 
         leftTabs.setMinWidth(420);
 
@@ -589,7 +851,9 @@ public class App extends Application {
         // mainColumn.getStyleClass().add("content-card");
         timeline.getStyleClass().add("timeline-card");
 
-        Scene scene = new Scene(layout, 800, 640);
+        Scene scene = new Scene(layout, 1080, 640);
+        stage.setMinWidth(960);
+        stage.setMinHeight(600);
 
         scene.getStylesheets().add(
                 getClass().getResource("/styles/light.css").toExternalForm());
@@ -626,6 +890,59 @@ public class App extends Application {
         timeline.getChildren().add(0, openWidgetButton);
 
         stage.show();
+    }
+
+    private ComboBox<TaskStep> createStepCombo() {
+
+        ComboBox<TaskStep> combo = new ComboBox<>();
+        combo.setPrefWidth(250);
+        combo.setPromptText("Whole task");
+
+        combo.setConverter(new javafx.util.StringConverter<>() {
+
+            @Override
+            public String toString(TaskStep step) {
+                return step == null
+                        ? "Whole task"
+                        : step.title() + " · " + step.estimatedMinutes() + " min";
+            }
+
+            @Override
+            public TaskStep fromString(String text) {
+                return null;
+            }
+        });
+
+        return combo;
+    }
+
+    private void reloadTaskSteps(
+            ComboBox<TaskStep> combo, Task task) {
+
+        String previousId = combo.getValue() == null
+                ? null
+                : combo.getValue().id();
+
+        combo.setValue(null);
+        combo.getItems().clear();
+
+        if (task == null) {
+            return;
+        }
+
+        try {
+            List<TaskStep> steps = taskStepRepository.findByTaskId(task.getId());
+
+            combo.getItems().setAll(steps);
+
+            steps.stream()
+                    .filter(s -> s.id().equals(previousId))
+                    .findFirst()
+                    .ifPresent(combo::setValue);
+
+        } catch (SQLException ex) {
+            ex.printStackTrace();
+        }
     }
 
     private void refreshSchedule(
@@ -728,6 +1045,37 @@ public class App extends Application {
                     new Label("Linked task"),
                     linkedTaskEdit);
 
+            ComboBox<TaskStep> linkedStepEdit = createStepCombo();
+
+            linkedTaskEdit.valueProperty().addListener(
+                    (obs, oldTask, newTask) -> reloadTaskSteps(linkedStepEdit, newTask));
+
+            reloadTaskSteps(linkedStepEdit, linkedTaskEdit.getValue());
+
+            if (block.stepId() != null) {
+                linkedStepEdit.getItems().stream()
+                        .filter(step -> step.id().equals(block.stepId()))
+                        .findFirst()
+                        .ifPresent(linkedStepEdit::setValue);
+            }
+
+            linkedStepEdit.setOnShowing(event -> reloadTaskSteps(linkedStepEdit, linkedTaskEdit.getValue()));
+
+            Button clearEditStep = new Button("Whole task");
+            clearEditStep.setOnAction(event -> linkedStepEdit.setValue(null));
+
+            HBox linkedStepEditRow = new HBox(
+                    8, new Label("Linked step"),
+                    linkedStepEdit, clearEditStep);
+
+            linkedStepEditRow.visibleProperty().bind(
+                    typeEdit.valueProperty()
+                            .isEqualTo(TimeBlock.Type.TASK)
+                            .and(linkedTaskEdit.valueProperty().isNotNull()));
+
+            linkedStepEditRow.managedProperty().bind(
+                    linkedStepEditRow.visibleProperty());
+
             linkedEditRow.visibleProperty().bind(
                     typeEdit.valueProperty().isEqualTo(TimeBlock.Type.TASK));
 
@@ -743,7 +1091,9 @@ public class App extends Application {
                     6,
                     titleEdit,
                     new HBox(8, new Label("Start"), startDateEdit, startTimeEdit),
-                    new HBox(8, new Label("End"), endDateEdit, endTimeEdit), linkedEditRow,
+                    new HBox(8, new Label("End"), endDateEdit, endTimeEdit),
+                    linkedEditRow,
+                    linkedStepEditRow,
                     new HBox(8, typeEdit, saveEditButton, cancelEditButton),
                     editStatus);
 
@@ -787,16 +1137,24 @@ public class App extends Application {
                         return;
                     }
 
+                    String editTaskId = typeEdit.getValue() == TimeBlock.Type.TASK
+                            && linkedTaskEdit.getValue() != null
+                                    ? linkedTaskEdit.getValue().getId()
+                                    : null;
+
+                    String editStepId = editTaskId != null
+                            && linkedStepEdit.getValue() != null
+                                    ? linkedStepEdit.getValue().id()
+                                    : null;
+
                     TimeBlock updatedBlock = new TimeBlock(
                             block.id(),
                             newTitle,
                             newStart,
                             newEnd,
                             typeEdit.getValue(),
-                            typeEdit.getValue() == TimeBlock.Type.TASK
-                                    && linkedTaskEdit.getValue() != null
-                                            ? linkedTaskEdit.getValue().getId()
-                                            : null);
+                            editTaskId,
+                            editStepId);
 
                     repository.update(updatedBlock);
 
@@ -851,7 +1209,7 @@ public class App extends Application {
         taskList.getChildren().clear();
 
         for (Task task : tasks) {
-            if (!matchesFilter(task, "Today")) {
+            if (!matchesFilter(task, filter)) {
                 continue;
             }
 
@@ -883,6 +1241,14 @@ public class App extends Application {
         taskDateInput.setPrefWidth(150);
 
         Button clearDateButton = new Button("Backlog");
+
+        Button scheduleTaskButton = new Button("Schedule");
+
+        scheduleTaskButton.setOnAction(event -> {
+            if (scheduleRequest != null) {
+                scheduleRequest.accept(task, null);
+            }
+        });
 
         Button deleteButton = new Button("x");
 
@@ -947,7 +1313,14 @@ public class App extends Application {
                 durationLabel,
                 taskDateInput,
                 clearDateButton,
+                scheduleTaskButton,
                 deleteButton);
+
+        Button editTaskButton = new Button("Edit");
+
+        metadataLine.getChildren().add(
+                metadataLine.getChildren().size() - 1,
+                editTaskButton);
 
         VBox rowContent = new VBox(
                 8, titleLine, metadataLine);
@@ -994,9 +1367,83 @@ public class App extends Application {
                                 tasks, taskList, progressLabel,
                                 progressBar, repository, filter));
                     }
+                },
+                step -> {
+                    if (scheduleRequest != null) {
+                        scheduleRequest.accept(task, step);
+                    }
                 });
 
-        VBox taskEntry = new VBox(4, taskRow, stepsView);
+        TextField taskTitleEdit = new TextField(task.getTitle());
+
+        Spinner<Integer> taskMinutesEdit = new Spinner<>(
+                1, 1440, task.getEstimatedMinutes(), 5);
+
+        taskMinutesEdit.setPrefWidth(105);
+
+        Button saveTaskEdit = new Button("Save");
+        Button cancelTaskEdit = new Button("Cancel");
+
+        Label taskEditStatus = new Label();
+
+        FlowPane taskEditActions = new FlowPane(
+                8, 6,
+                new Label("Estimated minutes"),
+                taskMinutesEdit,
+                saveTaskEdit,
+                cancelTaskEdit);
+
+        VBox taskEditor = new VBox(
+                8, taskTitleEdit, taskEditActions, taskEditStatus);
+
+        taskEditor.setVisible(false);
+        taskEditor.setManaged(false);
+
+        editTaskButton.setOnAction(event -> {
+            taskEditor.setVisible(true);
+            taskEditor.setManaged(true);
+        });
+
+        cancelTaskEdit.setOnAction(event -> {
+            taskEditor.setVisible(false);
+            taskEditor.setManaged(false);
+        });
+
+        saveTaskEdit.setOnAction(event -> {
+
+            String title = taskTitleEdit.getText().trim();
+            int minutes = taskMinutesEdit.getValue();
+
+            if (title.isEmpty()) {
+                taskEditStatus.setText("Task title is required.");
+                return;
+            }
+
+            try {
+                repository.updateDetails(task.getId(), title, minutes);
+
+                task.setTitle(title);
+                task.setEstimatedMinutes(minutes);
+
+                checkBox.setText(title);
+                durationLabel.setText(minutes + " min");
+
+                stepsView.refresh();
+
+                updateProgress(
+                        tasks, progressLabel, progressBar, filter);
+
+                taskEditor.setVisible(false);
+                taskEditor.setManaged(false);
+
+            } catch (SQLException ex) {
+                taskEditStatus.setText("Unable to update task.");
+                ex.printStackTrace();
+            }
+        });
+
+        VBox taskEntry = new VBox(
+                6, taskRow, taskEditor, stepsView);
 
         checkBox.setOnAction(e -> {
 
@@ -1098,7 +1545,7 @@ public class App extends Application {
 
         for (Task task : tasks) {
 
-            if (!matchesFilter(task, filter)) {
+            if (!matchesFilter(task, "Today")) {
                 continue;
             }
 

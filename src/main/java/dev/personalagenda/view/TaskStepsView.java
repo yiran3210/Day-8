@@ -8,6 +8,7 @@ import dev.personalagenda.data.TaskStepRepository;
 
 import java.sql.SQLException;
 import java.util.List;
+import java.util.function.Consumer;
 
 import javafx.geometry.Pos;
 import javafx.scene.control.*;
@@ -20,6 +21,7 @@ public class TaskStepsView extends VBox {
     private final TaskRepository taskRepository;
     private final TaskStepRepository stepRepository = new TaskStepRepository();
     private final Runnable onChanged;
+    private final Consumer<TaskStep> onSchedule;
 
     private final ProgressBar bar = new ProgressBar(0);
     private final Label summary = new Label();
@@ -29,12 +31,14 @@ public class TaskStepsView extends VBox {
             Task task,
             CheckBox parentCheckbox,
             TaskRepository taskRepository,
-            Runnable onChanged) {
+            Runnable onChanged,
+            Consumer<TaskStep> onSchedule) {
 
         this.task = task;
         this.parentCheckbox = parentCheckbox;
         this.taskRepository = taskRepository;
         this.onChanged = onChanged;
+        this.onSchedule = onSchedule;
 
         setSpacing(6);
         getStyleClass().add("task-steps");
@@ -164,10 +168,74 @@ public class TaskStepsView extends VBox {
                 Label duration = new Label(
                         step.estimatedMinutes() + " min");
 
+                Button scheduleButton = new Button("Schedule");
                 Button deleteButton = new Button("×");
 
                 HBox row = new HBox(
-                        8, box, duration, deleteButton);
+                        8, box, duration, scheduleButton, deleteButton);
+
+                Button editStepButton = new Button("Edit");
+
+                row.getChildren().add(
+                        row.getChildren().size() - 1, editStepButton);
+
+                TextField stepTitleEdit = new TextField(step.title());
+
+                Spinner<Integer> stepMinutesEdit = new Spinner<>(
+                        1, 1440, step.estimatedMinutes(), 5);
+
+                stepMinutesEdit.setPrefWidth(105);
+
+                Button saveStepEdit = new Button("Save");
+                Button cancelStepEdit = new Button("Cancel");
+
+                Label editStatus = new Label();
+
+                FlowPane editActions = new FlowPane(
+                        8, 6,
+                        new Label("Minutes"),
+                        stepMinutesEdit,
+                        saveStepEdit,
+                        cancelStepEdit);
+
+                VBox stepEditor = new VBox(
+                        6, stepTitleEdit, editActions, editStatus);
+
+                stepEditor.setVisible(false);
+                stepEditor.setManaged(false);
+
+                editStepButton.setOnAction(event -> {
+                    stepEditor.setVisible(true);
+                    stepEditor.setManaged(true);
+                });
+
+                cancelStepEdit.setOnAction(event -> {
+                    stepEditor.setVisible(false);
+                    stepEditor.setManaged(false);
+                });
+
+                saveStepEdit.setOnAction(event -> {
+                    String title = stepTitleEdit.getText().trim();
+
+                    if (title.isEmpty()) {
+                        editStatus.setText("Step title is required.");
+                        return;
+                    }
+
+                    try {
+                        stepRepository.updateDetails(
+                                step.id(), title, stepMinutesEdit.getValue());
+
+                        refresh();
+                        onChanged.run();
+
+                    } catch (SQLException ex) {
+                        editStatus.setText("Unable to update step.");
+                        ex.printStackTrace();
+                    }
+                });
+
+                scheduleButton.setOnAction(event -> onSchedule.accept(step));
 
                 box.setMaxWidth(Double.MAX_VALUE);
                 HBox.setHgrow(box, Priority.ALWAYS);
@@ -198,7 +266,8 @@ public class TaskStepsView extends VBox {
                     }
                 });
 
-                stepRows.getChildren().add(row);
+                stepRows.getChildren().add(
+                        new VBox(5, row, stepEditor));
             }
 
         } catch (SQLException ex) {

@@ -17,9 +17,9 @@ public class TimeBlockRepository {
 
         String sql = """
                 INSERT INTO time_blocks
-                (id, title, start_time, end_time, type, task_id)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """;
+                (id, title, start_time, end_time, type, task_id, step_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                                """;
 
         try (Connection conn = Database.connect();
                 PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -30,6 +30,7 @@ public class TimeBlockRepository {
             stmt.setString(4, block.end().toString());
             stmt.setString(5, block.type().name());
             stmt.setString(6, block.taskId());
+            stmt.setString(7, block.stepId());
 
             stmt.executeUpdate();
         }
@@ -61,7 +62,9 @@ public class TimeBlockRepository {
                             LocalDateTime.parse(rs.getString("start_time")),
                             LocalDateTime.parse(rs.getString("end_time")),
                             TimeBlock.Type.valueOf(rs.getString("type")),
-                            rs.getString("task_id"));
+                            rs.getString("task_id"),
+                            rs.getString("step_id"));
+                    ;
 
                     blocks.add(block);
                 }
@@ -85,11 +88,11 @@ public class TimeBlockRepository {
     public void update(TimeBlock block) throws SQLException {
 
         String sql = """
-                UPDATE time_blocks
-                SET title = ?, start_time = ?, end_time = ?,
-                    type = ?, task_id = ?
+                                UPDATE time_blocks
+                                SET title = ?, start_time = ?, end_time = ?,
+                type = ?, task_id = ?, step_id = ?
                 WHERE id = ?
-                """;
+                                """;
 
         try (Connection conn = Database.connect();
                 PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -99,7 +102,9 @@ public class TimeBlockRepository {
             stmt.setString(3, block.end().toString());
             stmt.setString(4, block.type().name());
             stmt.setString(5, block.taskId());
-            stmt.setString(6, block.id());
+            stmt.setString(6, block.stepId());
+            stmt.setString(7, block.id());
+            ;
 
             stmt.executeUpdate();
         }

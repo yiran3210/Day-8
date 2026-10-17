@@ -64,6 +64,24 @@ public class Database {
 
             statement.executeUpdate(timeBlockSql);
 
+            boolean hasStepId = false;
+
+            try (ResultSet columns = statement.executeQuery(
+                    "PRAGMA table_info(time_blocks)")) {
+
+                while (columns.next()) {
+                    if ("step_id".equals(columns.getString("name"))) {
+                        hasStepId = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!hasStepId) {
+                statement.executeUpdate(
+                        "ALTER TABLE time_blocks ADD COLUMN step_id TEXT");
+            }
+
             statement.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS categories (
                         name TEXT PRIMARY KEY COLLATE NOCASE,
