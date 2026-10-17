@@ -145,10 +145,6 @@
     -fx-pref-height: 9px;
 }
 
-.task-steps .label {
-    -fx-font-size: 12px;
-    -fx-text-fill: #566579;
-}
 
 .task-steps .check-box {
     -fx-text-fill: #334155;
@@ -166,11 +162,6 @@
 .task-row .check-box:disabled {
     -fx-text-fill: #314155;
     -fx-opacity: 1.0;
-}
-
-.task-steps .label {
-    -fx-font-size: 12px;
-    -fx-text-fill: #4F5F73;
 }
 
 .task-steps .check-box {
@@ -400,11 +391,6 @@
 
 /* ===== Typography hierarchy ===== */
 
-.section-title {
-    -fx-font-size: 16px;
-    -fx-font-weight: bold;
-    -fx-text-fill: #26364A;
-}
 
 .task-composer>.label {
     -fx-font-size: 14px;
@@ -417,10 +403,6 @@
     -fx-text-fill: #26364A;
 }
 
-.task-steps .label {
-    -fx-font-size: 12px;
-    -fx-text-fill: #526478;
-}
 
 .mini-widget {
     -fx-font-size: 12px;
@@ -436,20 +418,22 @@
     -fx-text-fill: #64748B;
 }
 
-/* Compact activity editor */
-.titled-pane>.title {
-    -fx-background-color: #E9EEF6;
-    -fx-background-radius: 10px;
-    -fx-padding: 10px 12px;
-}
-
-.titled-pane>.content {
-    -fx-background-color: #FFFFFF;
-    -fx-border-color: #E7ECF3;
-}
-
 
 /* ===== Typography v2 ===== */
+
+/* Project titles */
+.project-card .project-name {
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #1E3047;
+}
+
+/* Step titles */
+.step-entry .check-box {
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #334155;
+}
 
 /* Section headings */
 .section-heading,

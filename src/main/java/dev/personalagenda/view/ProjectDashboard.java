@@ -431,6 +431,7 @@ public class ProjectDashboard extends VBox {
                                 });
 
                                 Label projectNameLabel = new Label(project.name());
+                                projectNameLabel.getStyleClass().add("project-name");
 
                                 Region headerSpacer = new Region();
                                 HBox.setHgrow(headerSpacer, Priority.ALWAYS);
