@@ -67,6 +67,8 @@ public class App extends Application {
 
     private final TaskStepRepository taskStepRepository = new TaskStepRepository();
 
+    private final Label dailyProgressDetails = new Label();
+
     private BiConsumer<Task, TaskStep> scheduleRequest;
 
     @Override
@@ -180,7 +182,19 @@ public class App extends Application {
         progressBar.getStyleClass().add("daily-progress");
 
         VBox dailyProgressBox = new VBox(
-                8, progressLabel, progressBar);
+                8,
+                progressLabel,
+                progressBar,
+                dailyProgressDetails);
+
+        dailyProgressBox.setFillWidth(true);
+        dailyProgressBox.setMaxWidth(Double.MAX_VALUE);
+
+        progressBar.setMinWidth(0);
+        progressBar.setMaxWidth(Double.MAX_VALUE);
+
+        dailyProgressDetails.setWrapText(true);
+        dailyProgressDetails.setMaxWidth(Double.MAX_VALUE);
 
         dailyProgressBox.setFillWidth(true);
 
@@ -272,11 +286,22 @@ public class App extends Application {
 
         wholeTaskButton.setOnAction(event -> linkedStepInput.setValue(null));
 
+        Label linkedStepLabel = new Label("Linked step");
+        linkedStepLabel.setPrefWidth(80);
+        linkedStepLabel.setMinWidth(80);
+
         HBox linkedStepRow = new HBox(
-                8,
-                new Label("Linked step"),
+                12,
+                linkedStepLabel,
                 linkedStepInput,
                 wholeTaskButton);
+
+        linkedStepRow.setAlignment(Pos.CENTER_LEFT);
+
+        HBox.setHgrow(linkedStepInput, Priority.ALWAYS);
+        linkedStepInput.setMaxWidth(Double.MAX_VALUE);
+
+        wholeTaskButton.setMinWidth(Region.USE_PREF_SIZE);
 
         linkedStepRow.setVisible(false);
         linkedStepRow.setManaged(false);
@@ -297,10 +322,17 @@ public class App extends Application {
                     linkedStepRow.setManaged(showStep);
                 });
 
+        Label linkedTaskLabel = new Label("Linked task");
+        linkedTaskLabel.setPrefWidth(80);
+        linkedTaskLabel.setMinWidth(80);
+
         HBox linkedTaskRow = new HBox(
-                8,
-                new Label("Linked task"),
-                linkedTaskInput);
+                12, linkedTaskLabel, linkedTaskInput);
+
+        linkedTaskRow.setAlignment(Pos.CENTER_LEFT);
+
+        HBox.setHgrow(linkedTaskInput, Priority.ALWAYS);
+        linkedTaskInput.setMaxWidth(Double.MAX_VALUE);
 
         linkedTaskRow.setVisible(true);
         linkedTaskRow.setManaged(true);
@@ -507,10 +539,15 @@ public class App extends Application {
         HBox dateRow = new HBox(
                 10, new Label("Planned date:"), plannedDateInput, backlogButton);
 
-        HBox timeInputRow = new HBox(
-                8,
-                new Label("Start"), startTimeInput,
-                new Label("End"), endTimeInput);
+        inputRow.setAlignment(Pos.CENTER_LEFT);
+        dateRow.setAlignment(Pos.CENTER_LEFT);
+
+        addButton.setMinWidth(Region.USE_PREF_SIZE);
+        backlogButton.setMinWidth(Region.USE_PREF_SIZE);
+
+        durationInput.setMinWidth(Region.USE_PREF_SIZE);
+        taskCategoryInput.setMinWidth(Region.USE_PREF_SIZE);
+        plannedDateInput.setMinWidth(Region.USE_PREF_SIZE);
 
         nextDayInput.setText("Ends next day (+1 day)");
 
@@ -533,20 +570,23 @@ public class App extends Application {
         linkedTaskInput.setPrefWidth(260);
 
         GridPane scheduleFormGrid = new GridPane();
-        scheduleFormGrid.setHgap(14);
+        scheduleFormGrid.setHgap(12);
         scheduleFormGrid.setVgap(12);
+        scheduleFormGrid.setMaxWidth(Double.MAX_VALUE);
 
         ColumnConstraints labelCol = new ColumnConstraints();
         labelCol.setPrefWidth(100);
 
         ColumnConstraints controlCol = new ColumnConstraints();
         controlCol.setHgrow(Priority.ALWAYS);
+        controlCol.setFillWidth(true);
 
         ColumnConstraints labelCol2 = new ColumnConstraints();
-        labelCol2.setPrefWidth(64);
+        labelCol2.setPrefWidth(44);
 
         ColumnConstraints controlCol2 = new ColumnConstraints();
         controlCol2.setHgrow(Priority.ALWAYS);
+        controlCol2.setFillWidth(true);
 
         scheduleFormGrid.getColumnConstraints().addAll(
                 labelCol, controlCol, labelCol2, controlCol2);
@@ -557,14 +597,33 @@ public class App extends Application {
         scheduleFormGrid.add(new Label("Type"), 2, 0);
         scheduleFormGrid.add(blockTypeInput, 3, 0);
 
+        scheduleFormGrid.add(new Label("Start"), 0, 1);
+        scheduleFormGrid.add(startTimeInput, 1, 1);
+
+        scheduleFormGrid.add(new Label("End"), 2, 1);
+        scheduleFormGrid.add(endTimeInput, 3, 1);
+
+        // Row 2: automatic time options
+        scheduleFormGrid.add(nextDayRow, 0, 2, 4, 1);
+
+        // Row 3: linked task
+        scheduleFormGrid.add(linkedTaskRow, 0, 3, 4, 1);
+
+        // Row 4: optional linked step
+        scheduleFormGrid.add(linkedStepRow, 0, 4, 4, 1);
+
+        // Row 5: save action, aligned to the right
+        saveBlockButton.setMinWidth(Region.USE_PREF_SIZE);
+
+        scheduleFormGrid.add(saveBlockButton, 3, 5);
+
+        GridPane.setHalignment(
+                saveBlockButton,
+                javafx.geometry.HPos.RIGHT);
+
         VBox activityForm = new VBox(
                 10,
                 scheduleFormGrid,
-                timeInputRow,
-                nextDayRow,
-                linkedTaskRow,
-                linkedStepRow,
-                saveBlockButton,
                 blockStatus);
 
         TitledPane addActivityPane = new TitledPane(
@@ -676,12 +735,19 @@ public class App extends Application {
             }
         });
 
+        HBox categoryControls = new HBox(
+                10,
+                colorCategoryInput,
+                categoryColorPicker,
+                saveCategoryButton);
+
+        categoryControls.setAlignment(Pos.CENTER_LEFT);
+
+        saveCategoryButton.setMinWidth(Region.USE_PREF_SIZE);
+
         VBox categoryEditor = new VBox(
                 8,
-                new HBox(
-                        8, colorCategoryInput,
-                        categoryColorPicker,
-                        saveCategoryButton),
+                categoryControls,
                 newCategoryInput,
                 categoryStatus);
 
@@ -1581,8 +1647,10 @@ public class App extends Application {
         progressLabel.setText(
                 "Today: " + Math.round(progress * 100) + "%"
                         + "  ·  " + completedMinutes + "/" + plannedMinutes
-                        + " min\n"
-                        + remainingMinutes + " min remaining"
+                        + " min");
+
+        dailyProgressDetails.setText(
+                remainingMinutes + " min remaining"
                         + "  ·  " + completedTasks + "/" + totalTasks
                         + " tasks completed");
 
