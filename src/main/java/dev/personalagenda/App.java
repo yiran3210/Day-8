@@ -57,6 +57,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.paint.Color;
+import javafx.scene.image.Image;
 import javafx.stage.Stage;
 import javafx.scene.Scene;
 
@@ -942,6 +943,9 @@ public class App extends Application {
                 getClass().getResource("/styles/light.css").toExternalForm());
 
         stage.setTitle("Personal Agenda");
+        stage.getIcons().add(
+                new Image(getClass().getResourceAsStream(
+                        "/icons/agenda-icon.png")));
         stage.setScene(scene);
 
         FloatingWidget floatingWidget = new FloatingWidget(
