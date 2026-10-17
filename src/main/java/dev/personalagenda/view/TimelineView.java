@@ -22,6 +22,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
+import javafx.scene.layout.Region;
 import javafx.scene.shape.Line;
 import javafx.scene.paint.Color;
 import javafx.animation.KeyFrame;
@@ -59,7 +60,17 @@ public class TimelineView extends VBox {
 
                 Label heading = new Label("24h Schedule");
 
-                HBox headingRow = new HBox(12, heading, nowButton);
+                Region headingSpacer = new Region();
+
+                HBox.setHgrow(headingSpacer, Priority.ALWAYS);
+
+                HBox headingRow = new HBox(
+                                12, heading, headingSpacer, nowButton);
+
+                headingRow.setAlignment(
+                                javafx.geometry.Pos.CENTER_LEFT);
+
+                nowButton.setMinWidth(Region.USE_PREF_SIZE);
 
                 nowButton.setOnAction(event -> {
                         autoFollow = true;

@@ -73,17 +73,44 @@ public class ProjectDashboard extends VBox {
                         }
                 });
 
+                GridPane creationGrid = new GridPane();
+
+                creationGrid.setHgap(12);
+                creationGrid.setVgap(10);
+
+                ColumnConstraints labelColumn = new ColumnConstraints(85);
+
+                ColumnConstraints inputColumn = new ColumnConstraints();
+                inputColumn.setHgrow(Priority.ALWAYS);
+                inputColumn.setFillWidth(true);
+
+                creationGrid.getColumnConstraints().addAll(
+                                labelColumn, inputColumn);
+
+                nameInput.setMaxWidth(Double.MAX_VALUE);
+                categoryInput.setMaxWidth(Double.MAX_VALUE);
+                startInput.setMaxWidth(Double.MAX_VALUE);
+                dueInput.setMaxWidth(Double.MAX_VALUE);
+
+                creationGrid.add(new Label("Project"), 0, 0);
+                creationGrid.add(nameInput, 1, 0);
+
+                creationGrid.add(new Label("Category"), 0, 1);
+                creationGrid.add(categoryInput, 1, 1);
+
+                creationGrid.add(new Label("Start"), 0, 2);
+                creationGrid.add(startInput, 1, 2);
+
+                creationGrid.add(new Label("Due"), 0, 3);
+                creationGrid.add(dueInput, 1, 3);
+
+                creationGrid.add(createButton, 1, 4);
+
+                GridPane.setHalignment(
+                                createButton, javafx.geometry.HPos.RIGHT);
+
                 VBox creation = new VBox(
-                                8,
-                                heading,
-                                nameInput,
-                                new HBox(
-                                                8, new Label("Category"), categoryInput),
-                                new HBox(
-                                                8, new Label("Start"), startInput,
-                                                new Label("Due"), dueInput),
-                                createButton,
-                                status);
+                                10, heading, creationGrid, status);
 
                 getChildren().addAll(creation, projectCards);
                 refresh();
@@ -283,20 +310,43 @@ public class ProjectDashboard extends VBox {
                                 Button cancelProjectEdit = new Button("Cancel");
                                 Label projectEditStatus = new Label();
 
+                                GridPane editGrid = new GridPane();
+                                editGrid.setHgap(12);
+                                editGrid.setVgap(10);
+
+                                ColumnConstraints editLabelCol = new ColumnConstraints(85);
+
+                                ColumnConstraints editInputCol = new ColumnConstraints();
+                                editInputCol.setHgrow(Priority.ALWAYS);
+                                editInputCol.setFillWidth(true);
+
+                                editGrid.getColumnConstraints().addAll(
+                                                editLabelCol, editInputCol);
+
+                                projectNameEdit.setMaxWidth(Double.MAX_VALUE);
+                                projectCategoryEdit.setMaxWidth(Double.MAX_VALUE);
+                                projectStartEdit.setMaxWidth(Double.MAX_VALUE);
+                                projectDueEdit.setMaxWidth(Double.MAX_VALUE);
+
+                                editGrid.add(new Label("Project"), 0, 0);
+                                editGrid.add(projectNameEdit, 1, 0);
+
+                                editGrid.add(new Label("Category"), 0, 1);
+                                editGrid.add(projectCategoryEdit, 1, 1);
+
+                                editGrid.add(new Label("Start"), 0, 2);
+                                editGrid.add(projectStartEdit, 1, 2);
+
+                                editGrid.add(new Label("Due"), 0, 3);
+                                editGrid.add(projectDueEdit, 1, 3);
+
+                                HBox editActions = new HBox(
+                                                8, saveProjectEdit, cancelProjectEdit);
+
+                                editGrid.add(editActions, 1, 4);
+
                                 VBox projectEditor = new VBox(
-                                                8,
-                                                projectNameEdit,
-                                                new HBox(
-                                                                8,
-                                                                new Label("Category"),
-                                                                projectCategoryEdit),
-                                                new HBox(
-                                                                8, new Label("Start"), projectStartEdit),
-                                                new HBox(
-                                                                8, new Label("Due"), projectDueEdit),
-                                                new HBox(
-                                                                8, saveProjectEdit, cancelProjectEdit),
-                                                projectEditStatus);
+                                                8, editGrid, projectEditStatus);
 
                                 projectEditor.setVisible(false);
                                 projectEditor.setManaged(false);
@@ -382,11 +432,24 @@ public class ProjectDashboard extends VBox {
 
                                 Label projectNameLabel = new Label(project.name());
 
+                                Region headerSpacer = new Region();
+                                HBox.setHgrow(headerSpacer, Priority.ALWAYS);
+
+                                projectNameLabel.setWrapText(true);
+                                projectNameLabel.setMinWidth(0);
+
                                 HBox projectHeader = new HBox(
-                                                12,
+                                                10,
                                                 projectNameLabel,
+                                                headerSpacer,
                                                 editProjectButton,
                                                 deleteProjectButton);
+
+                                projectHeader.setAlignment(
+                                                javafx.geometry.Pos.CENTER_LEFT);
+
+                                editProjectButton.setMinWidth(Region.USE_PREF_SIZE);
+                                deleteProjectButton.setMinWidth(Region.USE_PREF_SIZE);
 
                                 VBox card = new VBox(
                                                 10,

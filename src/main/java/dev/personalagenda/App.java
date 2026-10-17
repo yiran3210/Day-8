@@ -212,6 +212,17 @@ public class App extends Application {
 
         HBox scheduleHeader = new HBox(12, scheduleTitle, scheduleDateInput);
 
+        Region scheduleHeaderSpacer = new Region();
+
+        scheduleHeader.getChildren().add(
+                1, scheduleHeaderSpacer);
+
+        HBox.setHgrow(
+                scheduleHeaderSpacer, Priority.ALWAYS);
+
+        scheduleHeader.setAlignment(Pos.CENTER_LEFT);
+        scheduleDateInput.setMinWidth(Region.USE_PREF_SIZE);
+
         TextField blockTitleInput = new TextField();
         blockTitleInput.setPromptText("Activity name");
 
