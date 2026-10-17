@@ -12,6 +12,7 @@ import dev.personalagenda.view.TimelineView;
 import dev.personalagenda.view.TaskStepsView;
 import dev.personalagenda.view.ProjectDashboard;
 import dev.personalagenda.view.FloatingWidget;
+import dev.personalagenda.view.UiLayout;
 
 // import java.util.ArrayList;
 import java.util.List;
@@ -735,13 +736,18 @@ public class App extends Application {
             }
         });
 
-        HBox categoryControls = new HBox(
-                10,
+        FlowPane categoryControls = new FlowPane(
+                10, 8,
                 colorCategoryInput,
                 categoryColorPicker,
                 saveCategoryButton);
 
         categoryControls.setAlignment(Pos.CENTER_LEFT);
+        colorCategoryInput.setMinWidth(Region.USE_PREF_SIZE);
+        categoryColorPicker.setMinWidth(Region.USE_PREF_SIZE);
+        saveCategoryButton.setMinWidth(Region.USE_PREF_SIZE);
+
+        newCategoryInput.setMaxWidth(Double.MAX_VALUE);
 
         saveCategoryButton.setMinWidth(Region.USE_PREF_SIZE);
 
@@ -1383,6 +1389,16 @@ public class App extends Application {
         HBox titleLine = new HBox(
                 12, checkBox, categoryButton);
 
+        titleLine.setAlignment(Pos.CENTER_LEFT);
+
+        checkBox.setMinWidth(0);
+        checkBox.setWrapText(true);
+
+        HBox.setHgrow(checkBox, Priority.ALWAYS);
+
+        categoryButton.setMinWidth(Region.USE_PREF_SIZE);
+        categoryButton.setMaxWidth(Region.USE_PREF_SIZE);
+
         HBox.setHgrow(checkBox, Priority.ALWAYS);
 
         FlowPane metadataLine = new FlowPane(
@@ -1403,6 +1419,24 @@ public class App extends Application {
                 8, titleLine, metadataLine);
 
         rowContent.setMaxWidth(Double.MAX_VALUE);
+
+        // Keep metadata separate from actions.
+        metadataLine.getChildren().removeAll(
+                scheduleTaskButton,
+                editTaskButton,
+                deleteButton);
+
+        metadataLine.setAlignment(Pos.CENTER_LEFT);
+
+        // Reusable right-aligned action row.
+        HBox taskActions = UiLayout.rightActions(
+                scheduleTaskButton,
+                editTaskButton,
+                deleteButton);
+
+        taskActions.getStyleClass().add("task-actions");
+
+        rowContent.getChildren().add(taskActions);
 
         taskRow.getChildren().setAll(rowContent);
         HBox.setHgrow(rowContent, Priority.ALWAYS);

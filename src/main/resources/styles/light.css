@@ -542,3 +542,14 @@
     -fx-text-fill: #64748B;
     -fx-opacity: 1.0;
 }
+
+/* Task and Step action rows */
+.task-actions .button,
+.step-actions .button {
+    -fx-padding: 6px 10px;
+}
+
+/* Individual Step entries */
+.step-entry {
+    -fx-padding: 6px 0;
+}

@@ -67,6 +67,16 @@ public class TaskStepsView extends VBox {
                 8, stepName, stepMinutes, addButton);
         HBox.setHgrow(stepName, Priority.ALWAYS);
 
+        addRow.setAlignment(Pos.CENTER_LEFT);
+
+        stepName.setMinWidth(60);
+        stepName.setMaxWidth(Double.MAX_VALUE);
+
+        HBox.setHgrow(stepName, Priority.ALWAYS);
+
+        stepMinutes.setMinWidth(Region.USE_PREF_SIZE);
+        addButton.setMinWidth(Region.USE_PREF_SIZE);
+
         VBox details = new VBox(8, stepRows, addRow);
         details.setVisible(false);
         details.setManaged(false);
@@ -179,6 +189,25 @@ public class TaskStepsView extends VBox {
                 row.getChildren().add(
                         row.getChildren().size() - 1, editStepButton);
 
+                row.getChildren().removeAll(
+                        scheduleButton,
+                        editStepButton,
+                        deleteButton);
+
+                row.setAlignment(Pos.CENTER_LEFT);
+
+                box.setMinWidth(0);
+                box.setWrapText(true);
+
+                duration.setMinWidth(Region.USE_PREF_SIZE);
+
+                HBox stepActions = UiLayout.rightActions(
+                        scheduleButton,
+                        editStepButton,
+                        deleteButton);
+
+                stepActions.getStyleClass().add("step-actions");
+
                 TextField stepTitleEdit = new TextField(step.title());
 
                 Spinner<Integer> stepMinutesEdit = new Spinner<>(
@@ -197,6 +226,8 @@ public class TaskStepsView extends VBox {
                         stepMinutesEdit,
                         saveStepEdit,
                         cancelStepEdit);
+
+                editActions.setAlignment(Pos.CENTER_RIGHT);
 
                 VBox stepEditor = new VBox(
                         6, stepTitleEdit, editActions, editStatus);
@@ -266,8 +297,15 @@ public class TaskStepsView extends VBox {
                     }
                 });
 
-                stepRows.getChildren().add(
-                        new VBox(5, row, stepEditor));
+                VBox stepEntry = new VBox(
+                        6,
+                        row,
+                        stepActions,
+                        stepEditor);
+
+                stepEntry.getStyleClass().add("step-entry");
+
+                stepRows.getChildren().add(stepEntry);
             }
 
         } catch (SQLException ex) {
