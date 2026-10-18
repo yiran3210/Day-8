@@ -12,6 +12,7 @@ import dev.personalagenda.view.TimelineView;
 import dev.personalagenda.view.TaskStepsView;
 import dev.personalagenda.view.ProjectDashboard;
 import dev.personalagenda.view.FloatingWidget;
+import dev.personalagenda.view.AppIcons;
 import dev.personalagenda.view.UiLayout;
 
 // import java.util.ArrayList;
@@ -119,7 +120,6 @@ public class App extends Application {
         Label progressLabel = new Label("0 / 0 completed");
 
         ProgressBar progressBar = new ProgressBar(0);
-        progressBar.setPrefWidth(400);
 
         refreshTaskList(tasks, taskList, progressLabel, progressBar, repository, viewFilter.getValue());
 
@@ -177,7 +177,6 @@ public class App extends Application {
 
         progressBar.setMinHeight(12);
         progressBar.setPrefHeight(12);
-        progressBar.setPrefWidth(320);
         progressBar.setMaxWidth(Double.MAX_VALUE);
         progressBar.setVisible(true);
         progressBar.setManaged(true);
@@ -577,7 +576,7 @@ public class App extends Application {
         scheduleFormGrid.setMaxWidth(Double.MAX_VALUE);
 
         ColumnConstraints labelCol = new ColumnConstraints();
-        labelCol.setPrefWidth(100);
+        labelCol.setPrefWidth(80);
 
         ColumnConstraints controlCol = new ColumnConstraints();
         controlCol.setHgrow(Priority.ALWAYS);
@@ -943,10 +942,11 @@ public class App extends Application {
                 getClass().getResource("/styles/light.css").toExternalForm());
 
         stage.setTitle("Personal Agenda");
+        AppIcons.apply(stage);
+        stage.setScene(scene);
         stage.getIcons().add(
                 new Image(getClass().getResourceAsStream(
                         "/icons/agenda-icon.png")));
-        stage.setScene(scene);
 
         FloatingWidget floatingWidget = new FloatingWidget(
                 stage,

@@ -97,6 +97,7 @@ public class FloatingWidget {
 
                 window.initStyle(StageStyle.UTILITY);
                 window.setTitle("Agenda · Mini");
+                AppIcons.apply(window);
                 window.setAlwaysOnTop(true);
                 window.setMinWidth(280);
                 window.setMinHeight(260);
