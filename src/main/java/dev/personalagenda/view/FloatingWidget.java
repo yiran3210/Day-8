@@ -6,10 +6,12 @@ import dev.personalagenda.data.TaskStepRepository;
 import dev.personalagenda.data.TimeBlockRepository;
 import dev.personalagenda.data.ProjectRepository;
 import dev.personalagenda.data.CategoryRepository;
+import dev.personalagenda.data.WorkSessionRepository;
 import dev.personalagenda.model.Project;
 import dev.personalagenda.model.Task;
 import dev.personalagenda.model.TaskStep;
 import dev.personalagenda.model.TimeBlock;
+import dev.personalagenda.model.WorkSession;
 
 import java.sql.SQLException;
 import java.time.Duration;
@@ -17,6 +19,11 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.util.Optional;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -83,6 +90,32 @@ public class FloatingWidget {
 
         private final VBox taskControls = new VBox(6);
 
+        // Persistent focus sessions
+        private final WorkSessionRepository workSessions = new WorkSessionRepository();
+
+        private final ComboBox<TaskStep> focusStepChoice = new ComboBox<>();
+
+        private final Label sessionTimerLabel = new Label("00:00:00");
+        private final Label sessionStatusLabel = new Label("Ready to focus");
+
+        private final Button sessionStartButton = new Button("Start");
+        private final Button sessionPauseButton = new Button("Pause");
+        private final Button sessionStopButton = new Button("Stop");
+        private final Button recoverSessionButton = new Button("Recover");
+
+        private final Button autoFocusButton = new Button("Auto");
+
+        private WorkSession activeSession;
+        private WorkSession pausedSession;
+
+        private Duration focusElapsed = Duration.ZERO;
+        private boolean unresolvedSession = false;
+
+        private final Timeline sessionTicker = new Timeline(
+                        new KeyFrame(
+                                        javafx.util.Duration.seconds(1),
+                                        event -> updateSessionTimer()));
+
         private final Timeline clock = new Timeline(
                         new KeyFrame(
                                         javafx.util.Duration.seconds(30),
@@ -137,17 +170,78 @@ public class FloatingWidget {
                         refresh();
                 });
 
-                Button autoButton = new Button("Auto");
-                autoButton.setOnAction(event -> {
+                autoFocusButton.setOnAction(event -> {
+                        if (activeSession != null || pausedSession != null) {
+                                return;
+                        }
+
                         manualFocusTaskId = null;
                         refresh();
                 });
 
                 HBox focusPicker = new HBox(
-                                6, focusTaskChoice, autoButton);
-                HBox.setHgrow(focusTaskChoice, Priority.ALWAYS);
+                                6, focusTaskChoice, autoFocusButton);
 
                 taskBar.setColor(Color.web("#887ABD"));
+
+                focusStepChoice.setPromptText("Whole task");
+                focusStepChoice.setMaxWidth(Double.MAX_VALUE);
+
+                focusStepChoice.setConverter(new StringConverter<>() {
+
+                        @Override
+                        public String toString(TaskStep step) {
+                                return step == null
+                                                ? "Whole task"
+                                                : step.title() + " · "
+                                                                + step.estimatedMinutes() + " min";
+                        }
+
+                        @Override
+                        public TaskStep fromString(String text) {
+                                return null;
+                        }
+                });
+
+                sessionTimerLabel.setStyle(
+                                "-fx-font-size: 23px; -fx-font-weight: bold;");
+
+                sessionStatusLabel.setWrapText(true);
+
+                sessionStartButton.setOnAction(
+                                event -> startFocusSession());
+
+                sessionPauseButton.setOnAction(
+                                event -> pauseFocusSession());
+
+                sessionStopButton.setOnAction(
+                                event -> stopFocusSession());
+
+                recoverSessionButton.setOnAction(
+                                event -> recoverUnfinishedSession());
+
+                recoverSessionButton.managedProperty().bind(
+                                recoverSessionButton.visibleProperty());
+
+                HBox sessionButtons = new HBox(
+                                6,
+                                sessionStartButton,
+                                sessionPauseButton,
+                                sessionStopButton,
+                                recoverSessionButton);
+
+                sessionButtons.setAlignment(
+                                javafx.geometry.Pos.CENTER_LEFT);
+
+                VBox sessionControls = new VBox(
+                                6,
+                                new Label("Focus Step"),
+                                focusStepChoice,
+                                sessionTimerLabel,
+                                sessionButtons,
+                                sessionStatusLabel);
+
+                updateSessionTimer();
 
                 ScrollPane taskScroll = new ScrollPane(taskControls);
                 taskScroll.setFitToWidth(true);
@@ -158,7 +252,7 @@ public class FloatingWidget {
                                 10,
                                 currentLabel,
                                 focusTitle,
-                                focusPicker,
+                                focusPicker, sessionControls,
                                 taskBar,
                                 taskProgressLabel,
                                 taskScroll,
@@ -312,8 +406,12 @@ public class FloatingWidget {
                 window.setOnShown(event -> Platform.runLater(resizeWidget));
 
                 clock.setCycleCount(Timeline.INDEFINITE);
+                sessionTicker.setCycleCount(Timeline.INDEFINITE);
 
-                window.setOnHidden(event -> clock.stop());
+                window.setOnHidden(event -> {
+                        clock.stop();
+                        sessionTicker.stop();
+                });
         }
 
         public void show() {
@@ -321,10 +419,233 @@ public class FloatingWidget {
 
                 if (!window.isShowing()) {
                         window.show();
+
                         clock.play();
+                        sessionTicker.play();
+
+                        if (activeSession == null) {
+                                recoverUnfinishedSession();
+                        }
+
                 } else {
                         window.toFront();
                 }
+
+                updateSessionTimer();
+        }
+
+        private void recoverUnfinishedSession() {
+
+                if (activeSession != null) {
+                        return;
+                }
+
+                try {
+                        Optional<WorkSession> pending = workSessions.findActive();
+
+                        if (pending.isEmpty()) {
+                                unresolvedSession = false;
+                                updateSessionTimer();
+                                return;
+                        }
+
+                        unresolvedSession = true;
+
+                        WorkSession session = pending.get();
+
+                        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+
+                        String started = LocalDateTime.ofInstant(
+                                        session.startedAt(),
+                                        ZoneId.systemDefault()).format(formatter);
+
+                        TextInputDialog dialog = new TextInputDialog("");
+
+                        dialog.setTitle("Recover Focus Session");
+                        dialog.setHeaderText(
+                                        "Unfinished: " + session.taskTitle()
+                                                        + "\nStarted: " + started);
+
+                        dialog.setContentText(
+                                        "Actual end time (yyyy-MM-dd HH:mm):");
+
+                        Optional<String> response = dialog.showAndWait();
+
+                        if (response.isEmpty() || response.get().isBlank()) {
+                                sessionStatusLabel.setText(
+                                                "Session unresolved. Click Recover to finish it.");
+                                return;
+                        }
+
+                        Instant actualEnd = LocalDateTime.parse(
+                                        response.get().trim(), formatter)
+                                        .atZone(ZoneId.systemDefault())
+                                        .toInstant();
+
+                        if (actualEnd.isBefore(session.startedAt())
+                                        || actualEnd.isAfter(Instant.now())) {
+                                throw new IllegalArgumentException(
+                                                "End must be between start time and now.");
+                        }
+
+                        if (!workSessions.stop(session.id(), actualEnd)) {
+                                throw new SQLException("Recovery could not be saved.");
+                        }
+
+                        unresolvedSession = false;
+                        sessionStatusLabel.setText("Previous session recovered.");
+
+                } catch (SQLException | DateTimeParseException
+                                | IllegalArgumentException ex) {
+
+                        unresolvedSession = true;
+                        sessionStatusLabel.setText(
+                                        "Recovery failed: " + ex.getMessage());
+
+                } finally {
+                        updateSessionTimer();
+                }
+        }
+
+        private void startFocusSession() {
+
+                try {
+                        if (unresolvedSession) {
+                                sessionStatusLabel.setText(
+                                                "Resolve the unfinished session first.");
+                                return;
+                        }
+
+                        Task task = currentFocusedTask;
+                        TaskStep step = focusStepChoice.getValue();
+
+                        if (task == null) {
+                                sessionStatusLabel.setText("Choose a task first.");
+                                return;
+                        }
+
+                        if (pausedSession != null) {
+                                String stepId = step == null ? null : step.id();
+
+                                if (!task.getId().equals(pausedSession.taskId())
+                                                || !java.util.Objects.equals(
+                                                                stepId, pausedSession.stepId())) {
+
+                                        sessionStatusLabel.setText(
+                                                        "Resume requires the original Task/Step.");
+                                        return;
+                                }
+                        }
+
+                        WorkSession started = workSessions.start(task, step);
+
+                        if (pausedSession == null) {
+                                focusElapsed = Duration.ZERO;
+                        }
+
+                        activeSession = started;
+                        pausedSession = null;
+
+                        manualFocusTaskId = task.getId();
+
+                        sessionStatusLabel.setText("Recording actual work.");
+
+                } catch (SQLException | IllegalArgumentException ex) {
+                        sessionStatusLabel.setText(
+                                        "Unable to start: " + ex.getMessage());
+                }
+
+                updateSessionTimer();
+        }
+
+        private void pauseFocusSession() {
+
+                if (activeSession == null) {
+                        return;
+                }
+
+                try {
+                        Instant endedAt = Instant.now();
+
+                        if (!workSessions.stop(activeSession.id(), endedAt)) {
+                                throw new SQLException("Session could not be closed.");
+                        }
+
+                        focusElapsed = focusElapsed.plus(
+                                        Duration.between(
+                                                        activeSession.startedAt(), endedAt));
+
+                        pausedSession = activeSession;
+                        activeSession = null;
+
+                        sessionStatusLabel.setText("Paused.");
+
+                } catch (SQLException ex) {
+                        sessionStatusLabel.setText(
+                                        "Pause failed: " + ex.getMessage());
+                }
+
+                updateSessionTimer();
+        }
+
+        private void stopFocusSession() {
+
+                try {
+                        if (activeSession != null) {
+                                if (!workSessions.stop(
+                                                activeSession.id(), Instant.now())) {
+                                        throw new SQLException("Session could not be closed.");
+                                }
+                        }
+
+                        activeSession = null;
+                        pausedSession = null;
+                        focusElapsed = Duration.ZERO;
+
+                        sessionStatusLabel.setText("Focus session finished.");
+
+                } catch (SQLException ex) {
+                        sessionStatusLabel.setText(
+                                        "Stop failed: " + ex.getMessage());
+                }
+
+                updateSessionTimer();
+        }
+
+        private void updateSessionTimer() {
+
+                Duration elapsed = focusElapsed;
+
+                if (activeSession != null) {
+                        elapsed = elapsed.plus(
+                                        Duration.between(
+                                                        activeSession.startedAt(), Instant.now()));
+                }
+
+                long seconds = Math.max(0, elapsed.getSeconds());
+
+                sessionTimerLabel.setText(String.format(
+                                "%02d:%02d:%02d",
+                                seconds / 3600,
+                                (seconds % 3600) / 60,
+                                seconds % 60));
+
+                boolean recording = activeSession != null;
+                boolean paused = pausedSession != null;
+                boolean locked = recording || paused;
+
+                sessionStartButton.setText(paused ? "Resume" : "Start");
+                sessionStartButton.setDisable(
+                                recording || unresolvedSession || currentFocusedTask == null);
+
+                sessionPauseButton.setDisable(!recording);
+                sessionStopButton.setDisable(!locked);
+
+                focusTaskChoice.setDisable(locked);
+                focusStepChoice.setDisable(locked || currentFocusedTask == null);
+                autoFocusButton.setDisable(locked);
+
+                recoverSessionButton.setVisible(unresolvedSession);
         }
 
         private void refresh() {
@@ -582,6 +903,12 @@ public class FloatingWidget {
 
                 String preferredId = manualFocusTaskId;
 
+                if (activeSession != null) {
+                        preferredId = activeSession.taskId();
+                } else if (pausedSession != null) {
+                        preferredId = pausedSession.taskId();
+                }
+
                 if (preferredId == null && current != null) {
                         preferredId = current.taskId();
                 }
@@ -616,6 +943,33 @@ public class FloatingWidget {
                 taskControls.getChildren().clear();
 
                 currentFocusedTask = selected;
+
+                String previousStepId = focusStepChoice.getValue() == null
+                                ? null
+                                : focusStepChoice.getValue().id();
+
+                if (activeSession != null) {
+                        previousStepId = activeSession.stepId();
+                } else if (pausedSession != null) {
+                        previousStepId = pausedSession.stepId();
+                }
+
+                List<TaskStep> availableSteps = selected == null
+                                ? List.of()
+                                : steps.findByTaskId(selected.getId());
+
+                focusStepChoice.getItems().setAll(availableSteps);
+
+                String wantedStepId = previousStepId;
+
+                TaskStep selectedStep = availableSteps.stream()
+                                .filter(step -> step.id().equals(wantedStepId))
+                                .findFirst()
+                                .orElse(null);
+
+                focusStepChoice.setValue(selectedStep);
+
+                updateSessionTimer();
 
                 if (selected == null) {
                         taskBar.setValues(0, 0);
