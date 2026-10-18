@@ -46,6 +46,8 @@ import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TextInputDialog;
 import javafx.scene.control.TitledPane;
+import javafx.scene.control.ButtonBar;
+import javafx.scene.control.ButtonType;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
@@ -54,6 +56,7 @@ import javafx.scene.paint.Color;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
+import javafx.stage.WindowEvent;
 import javafx.util.StringConverter;
 
 public class FloatingWidget {
@@ -117,6 +120,7 @@ public class FloatingWidget {
         private boolean unresolvedSession;
         private long finishedMillisToday;
         private LocalDate finishedMillisDate;
+        private boolean dayRefreshPending = false;
 
         // Clock / project section.
         private final ClockFace clockFace = new ClockFace();
@@ -392,6 +396,10 @@ public class FloatingWidget {
                         // Intentional: hiding does not stop an ongoing work session.
                 });
 
+                mainWindow.addEventFilter(
+                                WindowEvent.WINDOW_CLOSE_REQUEST,
+                                event -> handleMainWindowClose(event));
+
                 updateSessionTimer();
         }
 
@@ -402,6 +410,91 @@ public class FloatingWidget {
                         if (image != null) {
                                 window.getIcons().add(new javafx.scene.image.Image(image.toExternalForm()));
                         }
+                }
+        }
+
+        private void handleMainWindowClose(WindowEvent event) {
+
+                // No recording: normal exit.
+                if (activeSession == null) {
+                        window.hide();
+                        return;
+                }
+
+                ButtonType stopChoice = new ButtonType(
+                                "Stop & Exit",
+                                ButtonBar.ButtonData.OK_DONE);
+
+                ButtonType recoverChoice = new ButtonType(
+                                "Recover Later",
+                                ButtonBar.ButtonData.OTHER);
+
+                ButtonType cancelChoice = new ButtonType(
+                                "Cancel",
+                                ButtonBar.ButtonData.CANCEL_CLOSE);
+
+                Alert dialog = new Alert(Alert.AlertType.CONFIRMATION);
+
+                dialog.initOwner(mainWindow);
+                dialog.initModality(Modality.WINDOW_MODAL);
+
+                dialog.setTitle("Active Focus Session");
+                dialog.setHeaderText("A work session is still running.");
+
+                dialog.setContentText(
+                                "Stop & Exit: save the actual end time now.\n"
+                                                + "Recover Later: confirm the end time next time.\n"
+                                                + "Cancel: return to Agenda.");
+
+                dialog.getButtonTypes().setAll(
+                                stopChoice, recoverChoice, cancelChoice);
+
+                dialog.getDialogPane()
+                                .getStyleClass().add("agenda-confirmation");
+
+                java.net.URL css = getClass().getResource("/styles/light.css");
+
+                if (css != null) {
+                        dialog.getDialogPane().getStylesheets()
+                                        .add(css.toExternalForm());
+                }
+
+                // Prevent the always-on-top widget from covering the dialog.
+                boolean wasOnTop = window.isAlwaysOnTop();
+
+                Optional<ButtonType> result;
+
+                window.setAlwaysOnTop(false);
+
+                try {
+                        result = dialog.showAndWait();
+                } finally {
+                        window.setAlwaysOnTop(wasOnTop);
+                }
+
+                ButtonType choice = result.orElse(cancelChoice);
+
+                if (choice == stopChoice) {
+
+                        stopFocusSession();
+
+                        // If database saving failed, do not exit.
+                        if (activeSession != null) {
+                                event.consume();
+                                return;
+                        }
+
+                        window.hide();
+
+                } else if (choice == recoverChoice) {
+
+                        // Leave the unfinished DB row for next-launch recovery.
+                        window.hide();
+
+                } else {
+
+                        // Cancel the main window close request.
+                        event.consume();
                 }
         }
 
@@ -1073,10 +1166,23 @@ public class FloatingWidget {
         private void updateActualTodayLabel() {
                 LocalDate today = LocalDate.now();
                 if (!today.equals(finishedMillisDate)) {
-                        todayActualLabel.setText("Today's actual work: updating...");
-                        // One SQL refresh on the day boundary, not every second.
-                        if (window.isShowing())
-                                Platform.runLater(this::reloadWorkHistorySafely);
+
+                        todayActualLabel.setText(
+                                        "Today's actual work: updating...");
+
+                        if (!dayRefreshPending && window.isShowing()) {
+
+                                dayRefreshPending = true;
+
+                                Platform.runLater(() -> {
+                                        try {
+                                                reloadWorkHistorySafely();
+                                        } finally {
+                                                dayRefreshPending = false;
+                                        }
+                                });
+                        }
+
                         return;
                 }
                 long totalMillis = finishedMillisToday;
