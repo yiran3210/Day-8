@@ -9,118 +9,207 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.List;
+import java.util.ArrayList;
 import java.util.Optional;
 import java.util.UUID;
 
 public class WorkSessionRepository {
 
-    public WorkSession start(Task task, TaskStep step)
-            throws SQLException {
+        public WorkSession start(Task task, TaskStep step)
+                        throws SQLException {
 
-        if (task == null) {
-            throw new IllegalArgumentException(
-                    "Select a task before starting.");
+                if (task == null) {
+                        throw new IllegalArgumentException(
+                                        "Select a task before starting.");
+                }
+
+                if (step != null
+                                && !task.getId().equals(step.taskId())) {
+                        throw new IllegalArgumentException(
+                                        "Step does not belong to the selected task.");
+                }
+
+                WorkSession session = new WorkSession(
+                                UUID.randomUUID().toString(),
+                                task.getId(),
+                                step == null ? null : step.id(),
+                                task.getTitle(),
+                                step == null ? null : step.title(),
+                                Instant.now(),
+                                null);
+
+                String sql = """
+                                INSERT INTO work_sessions
+                                (id, task_id, step_id, task_title, step_title,
+                                 started_at_ms)
+                                SELECT ?, ?, ?, ?, ?, ?
+                                WHERE NOT EXISTS (
+                                    SELECT 1 FROM work_sessions
+                                    WHERE ended_at_ms IS NULL
+                                )
+                                """;
+
+                try (Connection conn = Database.connect();
+                                PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+                        stmt.setString(1, session.id());
+                        stmt.setString(2, session.taskId());
+                        stmt.setString(3, session.stepId());
+                        stmt.setString(4, session.taskTitle());
+                        stmt.setString(5, session.stepTitle());
+                        stmt.setLong(6, session.startedAt().toEpochMilli());
+
+                        if (stmt.executeUpdate() != 1) {
+                                throw new SQLException(
+                                                "Another work session is already active.");
+                        }
+                }
+
+                return session;
         }
 
-        if (step != null
-                && !task.getId().equals(step.taskId())) {
-            throw new IllegalArgumentException(
-                    "Step does not belong to the selected task.");
+        public boolean stop(String sessionId, Instant endedAt)
+                        throws SQLException {
+
+                String sql = """
+                                UPDATE work_sessions
+                                SET ended_at_ms = ?
+                                WHERE id = ?
+                                  AND ended_at_ms IS NULL
+                                """;
+
+                try (Connection conn = Database.connect();
+                                PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+                        stmt.setLong(1, endedAt.toEpochMilli());
+                        stmt.setString(2, sessionId);
+
+                        return stmt.executeUpdate() == 1;
+                }
         }
 
-        WorkSession session = new WorkSession(
-                UUID.randomUUID().toString(),
-                task.getId(),
-                step == null ? null : step.id(),
-                task.getTitle(),
-                step == null ? null : step.title(),
-                Instant.now(),
-                null);
+        public Optional<WorkSession> findActive()
+                        throws SQLException {
 
-        String sql = """
-                INSERT INTO work_sessions
-                (id, task_id, step_id, task_title, step_title,
-                 started_at_ms)
-                SELECT ?, ?, ?, ?, ?, ?
-                WHERE NOT EXISTS (
-                    SELECT 1 FROM work_sessions
-                    WHERE ended_at_ms IS NULL
-                )
-                """;
+                String sql = """
+                                SELECT *
+                                FROM work_sessions
+                                WHERE ended_at_ms IS NULL
+                                ORDER BY started_at_ms DESC
+                                LIMIT 1
+                                """;
 
-        try (Connection conn = Database.connect();
-                PreparedStatement stmt = conn.prepareStatement(sql)) {
+                try (Connection conn = Database.connect();
+                                PreparedStatement stmt = conn.prepareStatement(sql);
+                                ResultSet rs = stmt.executeQuery()) {
 
-            stmt.setString(1, session.id());
-            stmt.setString(2, session.taskId());
-            stmt.setString(3, session.stepId());
-            stmt.setString(4, session.taskTitle());
-            stmt.setString(5, session.stepTitle());
-            stmt.setLong(6, session.startedAt().toEpochMilli());
+                        if (!rs.next()) {
+                                return Optional.empty();
+                        }
 
-            if (stmt.executeUpdate() != 1) {
-                throw new SQLException(
-                        "Another work session is already active.");
-            }
+                        long endMs = rs.getLong("ended_at_ms");
+
+                        Instant endedAt = rs.wasNull()
+                                        ? null
+                                        : Instant.ofEpochMilli(endMs);
+
+                        return Optional.of(new WorkSession(
+                                        rs.getString("id"),
+                                        rs.getString("task_id"),
+                                        rs.getString("step_id"),
+                                        rs.getString("task_title"),
+                                        rs.getString("step_title"),
+                                        Instant.ofEpochMilli(
+                                                        rs.getLong("started_at_ms")),
+                                        endedAt));
+                }
         }
 
-        return session;
-    }
+        public long finishedMillisForDate(
+                        LocalDate date, ZoneId zone) throws SQLException {
 
-    public boolean stop(String sessionId, Instant endedAt)
-            throws SQLException {
+                long dayStart = date.atStartOfDay(zone)
+                                .toInstant().toEpochMilli();
 
-        String sql = """
-                UPDATE work_sessions
-                SET ended_at_ms = ?
-                WHERE id = ?
-                  AND ended_at_ms IS NULL
-                """;
+                long dayEnd = date.plusDays(1).atStartOfDay(zone)
+                                .toInstant().toEpochMilli();
 
-        try (Connection conn = Database.connect();
-                PreparedStatement stmt = conn.prepareStatement(sql)) {
+                String sql = """
+                                SELECT COALESCE(
+                                    SUM(
+                                        MIN(ended_at_ms, ?) -
+                                        MAX(started_at_ms, ?)
+                                    ), 0
+                                ) AS total_ms
+                                FROM work_sessions
+                                WHERE ended_at_ms IS NOT NULL
+                                  AND started_at_ms < ?
+                                  AND ended_at_ms > ?
+                                """;
 
-            stmt.setLong(1, endedAt.toEpochMilli());
-            stmt.setString(2, sessionId);
+                try (Connection conn = Database.connect();
+                                PreparedStatement stmt = conn.prepareStatement(sql)) {
 
-            return stmt.executeUpdate() == 1;
+                        stmt.setLong(1, dayEnd);
+                        stmt.setLong(2, dayStart);
+                        stmt.setLong(3, dayEnd);
+                        stmt.setLong(4, dayStart);
+
+                        try (ResultSet rs = stmt.executeQuery()) {
+                                return rs.next() ? rs.getLong("total_ms") : 0L;
+                        }
+                }
         }
-    }
 
-    public Optional<WorkSession> findActive()
-            throws SQLException {
+        public List<WorkSession> findRecentFinishedForDate(
+                        LocalDate date, ZoneId zone, int limit)
+                        throws SQLException {
 
-        String sql = """
-                SELECT *
-                FROM work_sessions
-                WHERE ended_at_ms IS NULL
-                ORDER BY started_at_ms DESC
-                LIMIT 1
-                """;
+                long dayStart = date.atStartOfDay(zone)
+                                .toInstant().toEpochMilli();
 
-        try (Connection conn = Database.connect();
-                PreparedStatement stmt = conn.prepareStatement(sql);
-                ResultSet rs = stmt.executeQuery()) {
+                long dayEnd = date.plusDays(1).atStartOfDay(zone)
+                                .toInstant().toEpochMilli();
 
-            if (!rs.next()) {
-                return Optional.empty();
-            }
+                String sql = """
+                                SELECT *
+                                FROM work_sessions
+                                WHERE ended_at_ms IS NOT NULL
+                                  AND started_at_ms < ?
+                                  AND ended_at_ms > ?
+                                ORDER BY ended_at_ms DESC
+                                LIMIT ?
+                                """;
 
-            long endMs = rs.getLong("ended_at_ms");
+                List<WorkSession> result = new ArrayList<>();
 
-            Instant endedAt = rs.wasNull()
-                    ? null
-                    : Instant.ofEpochMilli(endMs);
+                try (Connection conn = Database.connect();
+                                PreparedStatement stmt = conn.prepareStatement(sql)) {
 
-            return Optional.of(new WorkSession(
-                    rs.getString("id"),
-                    rs.getString("task_id"),
-                    rs.getString("step_id"),
-                    rs.getString("task_title"),
-                    rs.getString("step_title"),
-                    Instant.ofEpochMilli(
-                            rs.getLong("started_at_ms")),
-                    endedAt));
+                        stmt.setLong(1, dayEnd);
+                        stmt.setLong(2, dayStart);
+                        stmt.setInt(3, Math.max(1, limit));
+
+                        try (ResultSet rs = stmt.executeQuery()) {
+
+                                while (rs.next()) {
+                                        result.add(new WorkSession(
+                                                        rs.getString("id"),
+                                                        rs.getString("task_id"),
+                                                        rs.getString("step_id"),
+                                                        rs.getString("task_title"),
+                                                        rs.getString("step_title"),
+                                                        Instant.ofEpochMilli(
+                                                                        rs.getLong("started_at_ms")),
+                                                        Instant.ofEpochMilli(
+                                                                        rs.getLong("ended_at_ms"))));
+                                }
+                        }
+                }
+
+                return result;
         }
-    }
 }
