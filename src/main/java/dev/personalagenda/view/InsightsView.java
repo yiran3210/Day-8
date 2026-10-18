@@ -1,6 +1,8 @@
 package dev.personalagenda.view;
 
 import dev.personalagenda.data.WorkSessionRepository;
+import dev.personalagenda.data.CompletionObservationRepository;
+import dev.personalagenda.model.CompletionObservation;
 import dev.personalagenda.model.WorkSession;
 
 import java.sql.SQLException;
@@ -10,6 +12,8 @@ import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.HashMap;
 
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -51,6 +55,23 @@ public class InsightsView extends VBox {
 
     private final LineChart<Number, Number> hoursChart = new LineChart<>(xAxis, yAxis);
 
+    private final CompletionObservationRepository completionRepository = new CompletionObservationRepository();
+
+    private final NumberAxis completionXAxis = new NumberAxis();
+
+    private final NumberAxis completionYAxis = new NumberAxis(0, 100, 25);
+
+    private final LineChart<Number, Number> completionChart = new LineChart<>(completionXAxis, completionYAxis);
+
+    private final Label actualHoursValue = new Label("—");
+    private final Label completionValue = new Label("—");
+    private final Label completionStatus = new Label();
+
+    FlowPane kpis = new FlowPane(
+            12, 10,
+            kpiCard("Actual Work", actualHoursValue),
+            kpiCard("Observed Completion", completionValue));
+
     public InsightsView(WorkSessionRepository repository) {
 
         this.repository = repository;
@@ -77,21 +98,74 @@ public class InsightsView extends VBox {
         periodChoice.setOnAction(e -> reload());
         anchorDate.setOnAction(e -> reload());
 
+        CheckBox showGrid = new CheckBox();
+
+        Label gridText = new Label("Grid");
+
+        HBox gridControl = new HBox(6, showGrid, gridText);
+        gridControl.setAlignment(Pos.CENTER_LEFT);
+        gridControl.setMinWidth(Region.USE_PREF_SIZE);
+
+        showGrid.setSelected(true);
+
+        showGrid.selectedProperty().addListener(
+                (obs, oldValue, enabled) -> {
+
+                    hoursChart.setHorizontalGridLinesVisible(enabled);
+                    hoursChart.setVerticalGridLinesVisible(enabled);
+
+                    completionChart.setHorizontalGridLinesVisible(enabled);
+                    completionChart.setVerticalGridLinesVisible(enabled);
+                });
+
+        hoursChart.setHorizontalGridLinesVisible(true);
+        hoursChart.setVerticalGridLinesVisible(true);
+
         FlowPane controls = new FlowPane(
                 8, 8,
-                periodChoice, previous, anchorDate, next, today);
+                periodChoice, previous, anchorDate,
+                next, today, gridControl);
 
         controls.setAlignment(Pos.CENTER_LEFT);
 
         yAxis.setLabel("Actual hours");
-        yAxis.setForceZeroInRange(true);
+        yAxis.setAutoRanging(false);
+        yAxis.setLowerBound(0);
+        yAxis.setUpperBound(2);
+        yAxis.setTickUnit(0.5);
 
-        hoursChart.setTitle("Actual Work Hours");
+        xAxis.setAutoRanging(false);
+
+        xAxis.setTickLabelsVisible(true);
+        yAxis.setTickLabelsVisible(true);
+
+        xAxis.setTickMarkVisible(true);
+        yAxis.setTickMarkVisible(true);
+
+        xAxis.setMinorTickVisible(false);
+        yAxis.setMinorTickVisible(false);
+
+        hoursChart.getStyleClass().add("insights-chart");
+        hoursChart.setMaxHeight(340);
         hoursChart.setAnimated(false);
         hoursChart.setLegendVisible(false);
         hoursChart.setCreateSymbols(true);
         hoursChart.setMinHeight(260);
         hoursChart.setPrefHeight(320);
+
+        completionXAxis.setAutoRanging(false);
+        completionYAxis.setAutoRanging(false);
+        completionYAxis.setLabel("Completion (%)");
+
+        completionChart.setTitle("Task Completion Rate");
+        completionChart.setAnimated(false);
+        completionChart.setLegendVisible(false);
+        completionChart.setCreateSymbols(true);
+        completionChart.setPrefHeight(290);
+        completionChart.setMinHeight(240);
+
+        completionChart.getStyleClass().addAll(
+                "insights-chart", "completion-chart");
 
         summary.setWrapText(true);
         status.setWrapText(true);
@@ -104,8 +178,14 @@ public class InsightsView extends VBox {
         explanation.getStyleClass().add("mini-stat");
 
         getChildren().addAll(
-                heading, controls, summary,
-                hoursChart, explanation, status);
+                heading,
+                controls,
+                kpis,
+                hoursChart,
+                completionChart,
+                completionStatus,
+                explanation,
+                status);
 
         reload();
     }
@@ -263,25 +343,216 @@ public class InsightsView extends VBox {
                 }
             });
 
+            double maxHours = series.getData().stream()
+                    .mapToDouble(point -> point.getYValue().doubleValue())
+                    .max()
+                    .orElse(0.0);
+
+            double tickStep = Math.max(
+                    0.5,
+                    Math.ceil(maxHours / 4.0 * 2.0) / 2.0);
+
+            yAxis.setLowerBound(0);
+            yAxis.setUpperBound(tickStep * 4);
+            yAxis.setTickUnit(tickStep);
+
             hoursChart.getData().setAll(series);
+
+            reloadCompletion(
+                    period,
+                    start,
+                    end,
+                    boundaries);
 
             double hours = totalMillis / 3_600_000.0;
             double average = elapsedBuckets == 0
                     ? 0
                     : hours / elapsedBuckets;
 
-            summary.setText(String.format(
-                    Locale.ROOT,
-                    "%s to %s  |  Total: %.2f h  |  "
-                            + "Average per elapsed interval: %.2f h",
-                    start, end.minusDays(1), hours, average));
+            actualHoursValue.setText(
+                    String.format(Locale.ROOT, "%.2f h", hours));
 
-            status.setText("");
+            if (elapsedBuckets == 0) {
+                status.setText(
+                        "Future period: no actual work data yet.");
+            } else if (sessions.isEmpty()) {
+                status.setText(
+                        "No completed work sessions in this period.");
+            } else {
+                status.setText("");
+            }
 
         } catch (SQLException ex) {
             status.setText("Unable to load work statistics.");
             hoursChart.getData().clear();
             ex.printStackTrace();
         }
+    }
+
+    private static VBox kpiCard(String caption, Label value) {
+
+        Label title = new Label(caption);
+        title.getStyleClass().add("mini-stat");
+
+        value.getStyleClass().add("section-heading");
+
+        VBox card = new VBox(5, title, value);
+        card.getStyleClass().add("insights-kpi");
+
+        return card;
+    }
+
+    private void reloadCompletion(
+            Period period,
+            LocalDate start,
+            LocalDate end,
+            List<Instant> boundaries) throws SQLException {
+
+        List<CompletionObservation> history = completionRepository.findBetween(start, end);
+
+        Map<LocalDate, CompletionObservation> lastByDay = new HashMap<>();
+
+        for (CompletionObservation observation : history) {
+            lastByDay.put(observation.date(), observation);
+        }
+
+        int count = boundaries.size() - 1;
+
+        completionXAxis.setLowerBound(1);
+        completionXAxis.setUpperBound(count);
+        completionXAxis.setTickUnit(xAxis.getTickUnit());
+        completionXAxis.setTickLabelFormatter(
+                xAxis.getTickLabelFormatter());
+        completionXAxis.setLabel(xAxis.getLabel());
+
+        List<Double> rates = new ArrayList<>();
+
+        if (period == Period.DAY) {
+
+            CompletionObservation last = null;
+            int cursor = 0;
+
+            for (int i = 0; i < count; i++) {
+
+                Instant bucketEnd = boundaries.get(i + 1);
+
+                while (cursor < history.size()
+                        && history.get(cursor).observedAt()
+                                .isBefore(bucketEnd)) {
+
+                    last = history.get(cursor++);
+                }
+
+                rates.add(
+                        boundaries.get(i).isAfter(Instant.now())
+                                ? null
+                                : rate(last));
+            }
+
+        } else if (period == Period.YEAR) {
+
+            for (int i = 0; i < count; i++) {
+
+                LocalDate monthStart = start.plusMonths(i);
+                LocalDate monthEnd = monthStart.plusMonths(1);
+
+                long planned = 0;
+                long completed = 0;
+
+                for (CompletionObservation observation : lastByDay.values()) {
+
+                    if (!observation.date().isBefore(monthStart)
+                            && observation.date().isBefore(monthEnd)
+                            && observation.plannedMinutes() > 0) {
+
+                        planned += observation.plannedMinutes();
+                        completed += observation.completedMinutes();
+                    }
+                }
+
+                rates.add(planned == 0
+                        ? null
+                        : 100.0 * completed / planned);
+            }
+
+        } else {
+
+            // Week and Month: one observation per calendar day
+            for (int i = 0; i < count; i++) {
+                rates.add(rate(lastByDay.get(start.plusDays(i))));
+            }
+        }
+
+        // Split the line at missing dates.
+        List<XYChart.Series<Number, Number>> segments = new ArrayList<>();
+
+        XYChart.Series<Number, Number> segment = null;
+
+        for (int i = 0; i < rates.size(); i++) {
+
+            Double value = rates.get(i);
+
+            if (value == null) {
+                segment = null;
+                continue;
+            }
+
+            if (segment == null) {
+                segment = new XYChart.Series<>();
+                segments.add(segment);
+            }
+
+            segment.getData().add(
+                    new XYChart.Data<>(i + 1, value));
+        }
+
+        completionChart.getData().setAll(segments);
+
+        long plannedSum = 0;
+        long completedSum = 0;
+
+        if (period == Period.DAY) {
+
+            CompletionObservation last = history.isEmpty()
+                    ? null
+                    : history.get(history.size() - 1);
+
+            if (last != null && last.plannedMinutes() > 0) {
+                plannedSum = last.plannedMinutes();
+                completedSum = last.completedMinutes();
+            }
+
+        } else {
+
+            for (CompletionObservation observation : lastByDay.values()) {
+
+                if (observation.plannedMinutes() > 0) {
+                    plannedSum += observation.plannedMinutes();
+                    completedSum += observation.completedMinutes();
+                }
+            }
+        }
+
+        completionValue.setText(plannedSum == 0
+                ? "—"
+                : String.format(Locale.ROOT, "%.1f%%",
+                        100.0 * completedSum / plannedSum));
+
+        completionStatus.setText(
+                history.isEmpty()
+                        ? "No recorded completion history for this period."
+                        : lastByDay.size()
+                                + " observed day(s). Missing dates are not 0%.");
+    }
+
+    private static Double rate(CompletionObservation observation) {
+
+        if (observation == null
+                || observation.plannedMinutes() <= 0) {
+            return null;
+        }
+
+        return 100.0 * observation.completedMinutes()
+                / observation.plannedMinutes();
     }
 }

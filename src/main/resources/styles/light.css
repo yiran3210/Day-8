@@ -537,3 +537,42 @@
 .step-entry {
     -fx-padding: 6px 0;
 }
+
+/* Insights chart axes and grid */
+.insights-chart .axis {
+    -fx-tick-label-fill: #526478;
+    -fx-tick-label-font-size: 11px;
+}
+
+.insights-chart .axis-tick-mark,
+.insights-chart .axis-minor-tick-mark {
+    -fx-stroke: #8FA2B8;
+}
+
+.insights-chart .chart-horizontal-grid-lines,
+.insights-chart .chart-vertical-grid-lines {
+    -fx-stroke: #E4EAF2;
+    -fx-stroke-width: 0.8px;
+}
+
+.insights-chart .chart-series-line {
+    -fx-stroke: #5F91BC;
+    -fx-stroke-width: 2px;
+}
+
+.insights-kpi {
+    -fx-background-color: #F2F5FA;
+    -fx-background-radius: 12px;
+    -fx-padding: 12px 16px;
+    -fx-min-width: 155px;
+}
+
+.completion-chart .chart-series-line {
+    -fx-stroke: #887ABD;
+    -fx-stroke-width: 2px;
+}
+
+.completion-chart .chart-line-symbol {
+    -fx-background-color: #887ABD, white;
+    -fx-background-insets: 0, 2;
+}
