@@ -93,6 +93,13 @@ public class FloatingWidget {
         private String preferredStepId;
         private String stepChoiceTaskId;
 
+        private boolean manualStepOverride = false;
+
+        private TimeBlock scheduledNow;
+        private final Label scheduleFocusLabel = new Label();
+
+        private final Button wholeTaskButton = new Button("Whole task");
+
         // Session state. Pause/Resume creates separate, non-overlapping DB rows.
         private final Label sessionTimerLabel = new Label("00:00:00");
         private final Label sessionStatusLabel = new Label("Ready to focus");
@@ -161,6 +168,7 @@ public class FloatingWidget {
                         Task chosen = focusTaskChoice.getValue();
                         manualFocusTaskId = chosen == null ? null : chosen.getId();
                         preferredStepId = null;
+                        manualStepOverride = false;
                         stepChoiceTaskId = null;
                         refresh();
                 });
@@ -169,6 +177,7 @@ public class FloatingWidget {
                                 return;
                         manualFocusTaskId = null;
                         preferredStepId = null;
+                        manualStepOverride = false;
                         stepChoiceTaskId = null;
                         refresh();
                 });
@@ -193,9 +202,44 @@ public class FloatingWidget {
                 focusStepChoice.setOnAction(e -> {
                         if (updatingStepChoice || focusIsLocked())
                                 return;
+
                         TaskStep selected = focusStepChoice.getValue();
+
+                        manualStepOverride = true;
                         preferredStepId = selected == null ? null : selected.id();
+
+                        updateScheduleFocusStatus();
                 });
+
+                wholeTaskButton.setOnAction(e -> {
+
+                        if (focusIsLocked())
+                                return;
+
+                        manualStepOverride = true;
+                        preferredStepId = null;
+
+                        updatingStepChoice = true;
+                        try {
+                                focusStepChoice.setValue(null);
+                        } finally {
+                                updatingStepChoice = false;
+                        }
+
+                        updateScheduleFocusStatus();
+                });
+
+                scheduleFocusLabel.setWrapText(true);
+                scheduleFocusLabel.setMaxWidth(Double.MAX_VALUE);
+
+                scheduleFocusLabel.setStyle(
+                                "-fx-font-size: 12px;"
+                                                + "-fx-text-fill: #526478;");
+
+                scheduleFocusLabel.setVisible(false);
+
+                scheduleFocusLabel.managedProperty().bind(
+                                scheduleFocusLabel.visibleProperty());
 
                 sessionTimerLabel.setStyle("-fx-font-size: 23px; -fx-font-weight: bold;");
                 sessionStatusLabel.setWrapText(true);
@@ -218,8 +262,17 @@ public class FloatingWidget {
                 recentSessionsPane.setExpanded(false);
                 recentSessionsPane.setAnimated(false);
                 recentSessionsPane.setMaxWidth(Double.MAX_VALUE);
+
+                HBox stepPicker = new HBox(
+                                6, focusStepChoice, wholeTaskButton);
+
+                stepPicker.setAlignment(Pos.CENTER_LEFT);
+
+                HBox.setHgrow(focusStepChoice, Priority.ALWAYS);
+                wholeTaskButton.setMinWidth(Region.USE_PREF_SIZE);
+
                 VBox sessionControls = new VBox(6,
-                                new Label("Focus Step"), focusStepChoice,
+                                new Label("Focus Step"), stepPicker,
                                 sessionTimerLabel, sessionButtons,
                                 sessionStatusLabel, todayActualLabel, recentSessionsPane);
 
@@ -229,7 +282,8 @@ public class FloatingWidget {
                 taskScroll.setPrefHeight(72);
                 taskScroll.setMaxHeight(96);
                 VBox focusContent = new VBox(10,
-                                currentLabel, focusTitle, focusPicker, sessionControls,
+                                currentLabel, focusTitle, focusPicker,
+                                scheduleFocusLabel, sessionControls,
                                 taskBar, taskProgressLabel, taskScroll,
                                 new Separator(), nextLabel);
                 focusContent.getStyleClass().add("mini-card");
@@ -425,8 +479,14 @@ public class FloatingWidget {
                                                 + Math.min(100, Math.round(elapsed * 100.0 / total))
                                                 + "% elapsed · " + remaining + " min left");
                         }
+
+                        scheduledNow = current;
+
                         updateFocusTask(current, allTasks, today);
+                        updateScheduleFocusStatus();
+
                         refreshClockFocus();
+
                         nextLabel.setText(next == null ? "Next: No upcoming activity"
                                         : "Next: " + next.title() + " · " + next.start().toLocalTime());
 
@@ -489,12 +549,42 @@ public class FloatingWidget {
                 taskControls.getChildren().clear();
 
                 String selectedTaskId = selected == null ? null : selected.getId();
+
                 if (!Objects.equals(stepChoiceTaskId, selectedTaskId)) {
                         stepChoiceTaskId = selectedTaskId;
                         preferredStepId = null;
+                        manualStepOverride = false;
                 }
-                String wantedStepId = activeSession != null ? activeSession.stepId()
-                                : pausedSession != null ? pausedSession.stepId() : preferredStepId;
+
+                String wantedStepId;
+
+                if (activeSession != null) {
+
+                        // Never change the Step of an active recording.
+                        wantedStepId = activeSession.stepId();
+
+                } else if (pausedSession != null) {
+
+                        // Resume must use the original Step.
+                        wantedStepId = pausedSession.stepId();
+
+                } else if (manualStepOverride) {
+
+                        // Respect explicit manual selection, including Whole task.
+                        wantedStepId = preferredStepId;
+
+                } else if (current != null
+                                && current.type() == TimeBlock.Type.TASK
+                                && Objects.equals(current.taskId(), selectedTaskId)) {
+
+                        // Automatically follow the scheduled Step.
+                        wantedStepId = current.stepId();
+
+                } else {
+
+                        wantedStepId = null;
+                }
+
                 List<TaskStep> availableSteps = selected == null
                                 ? List.of()
                                 : steps.findByTaskId(selected.getId());
@@ -517,6 +607,118 @@ public class FloatingWidget {
                         showFocusedTask(selected);
                 }
                 updateSessionTimer();
+        }
+
+        private String describeScheduled(TimeBlock block) {
+
+                if (block.type() != TimeBlock.Type.TASK) {
+                        return block.title() + " (" + block.type() + ")";
+                }
+
+                if (block.taskId() == null) {
+                        return block.title() + " (unlinked)";
+                }
+
+                Task task = focusTaskChoice.getItems().stream()
+                                .filter(t -> t.getId().equals(block.taskId()))
+                                .findFirst()
+                                .orElse(null);
+
+                String taskName = task == null
+                                ? block.title()
+                                : task.getTitle();
+
+                if (block.stepId() == null) {
+                        return taskName + " / Whole task";
+                }
+
+                try {
+                        String stepName = steps.findByTaskId(block.taskId())
+                                        .stream()
+                                        .filter(s -> s.id().equals(block.stepId()))
+                                        .map(TaskStep::title)
+                                        .findFirst()
+                                        .orElse("Unavailable step");
+
+                        return taskName + " / " + stepName;
+
+                } catch (SQLException ex) {
+                        return taskName + " / Step unavailable";
+                }
+        }
+
+        private void updateScheduleFocusStatus() {
+
+                TimeBlock planned = scheduledNow;
+                Task selectedTask = currentFocusedTask;
+                TaskStep selectedStep = focusStepChoice.getValue();
+
+                String actualTaskId = activeSession != null
+                                ? activeSession.taskId()
+                                : pausedSession != null
+                                                ? pausedSession.taskId()
+                                                : selectedTask == null ? null : selectedTask.getId();
+
+                String actualStepId = activeSession != null
+                                ? activeSession.stepId()
+                                : pausedSession != null
+                                                ? pausedSession.stepId()
+                                                : selectedStep == null ? null : selectedStep.id();
+
+                boolean matching = planned != null
+                                && planned.type() == TimeBlock.Type.TASK
+                                && Objects.equals(planned.taskId(), actualTaskId)
+                                && Objects.equals(planned.stepId(), actualStepId);
+
+                boolean showDifference = planned != null
+                                && actualTaskId != null
+                                && !matching
+                                && (planned.type() == TimeBlock.Type.TASK
+                                                || activeSession != null
+                                                || pausedSession != null);
+
+                if (showDifference) {
+
+                        String actualDescription;
+
+                        WorkSession session = activeSession != null
+                                        ? activeSession
+                                        : pausedSession;
+
+                        if (session != null) {
+                                actualDescription = session.taskTitle()
+                                                + (session.stepTitle() == null
+                                                                ? " / Whole task"
+                                                                : " / " + session.stepTitle());
+                        } else {
+                                actualDescription = selectedTask.getTitle()
+                                                + (selectedStep == null
+                                                                ? " / Whole task"
+                                                                : " / " + selectedStep.title());
+                        }
+
+                        String mode = activeSession != null
+                                        ? "Recording"
+                                        : pausedSession != null
+                                                        ? "Paused"
+                                                        : "Selected";
+
+                        scheduleFocusLabel.setText(
+                                        "Scheduled: " + describeScheduled(planned)
+                                                        + "\n"
+                                                        + mode + ": " + actualDescription);
+
+                } else {
+                        scheduleFocusLabel.setText("");
+                }
+
+                boolean visibilityChanged = scheduleFocusLabel.isVisible() != showDifference;
+
+                scheduleFocusLabel.setVisible(showDifference);
+
+                if (visibilityChanged) {
+                        requestResize();
+                }
         }
 
         private void showFocusedTask(Task linkedTask) throws SQLException {
@@ -678,13 +880,13 @@ public class FloatingWidget {
                                 focusElapsed = Duration.ZERO;
                         activeSession = started;
                         pausedSession = null;
-                        manualFocusTaskId = task.getId();
                         sessionStatusLabel.setText("Recording actual work.");
                         reloadWorkHistorySafely();
                 } catch (SQLException | IllegalArgumentException ex) {
                         sessionStatusLabel.setText("Start failed: " + ex.getMessage());
                 }
                 updateSessionTimer();
+                updateScheduleFocusStatus();
         }
 
         private void pauseFocusSession() {
@@ -705,6 +907,7 @@ public class FloatingWidget {
                         sessionStatusLabel.setText("Pause failed: " + ex.getMessage());
                 }
                 updateSessionTimer();
+                updateScheduleFocusStatus();
         }
 
         private void stopFocusSession() {
@@ -723,7 +926,10 @@ public class FloatingWidget {
                 } catch (SQLException ex) {
                         sessionStatusLabel.setText("Stop failed: " + ex.getMessage());
                 }
+
+                refresh();
                 updateSessionTimer();
+                updateScheduleFocusStatus();
         }
 
         private void updateSessionTimer() {
@@ -745,6 +951,9 @@ public class FloatingWidget {
                 sessionStopButton.setDisable(!locked);
                 focusTaskChoice.setDisable(locked);
                 focusStepChoice.setDisable(locked || currentFocusedTask == null);
+
+                wholeTaskButton.setDisable(locked || currentFocusedTask == null);
+
                 autoFocusButton.setDisable(locked);
                 recoverSessionButton.setVisible(unresolvedSession);
                 updateActualTodayLabel();
