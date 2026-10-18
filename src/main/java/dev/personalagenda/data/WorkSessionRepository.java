@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.Optional;
 import java.util.UUID;
+import java.time.Instant;
 
 public class WorkSessionRepository {
 
@@ -206,6 +207,43 @@ public class WorkSessionRepository {
                                                                         rs.getLong("started_at_ms")),
                                                         Instant.ofEpochMilli(
                                                                         rs.getLong("ended_at_ms"))));
+                                }
+                        }
+                }
+
+                return result;
+        }
+
+        public List<WorkSession> findFinishedOverlapping(
+                        Instant rangeStart, Instant rangeEnd) throws SQLException {
+
+                String sql = """
+                                SELECT *
+                                FROM work_sessions
+                                WHERE ended_at_ms IS NOT NULL
+                                  AND started_at_ms < ?
+                                  AND ended_at_ms > ?
+                                ORDER BY started_at_ms
+                                """;
+
+                List<WorkSession> result = new ArrayList<>();
+
+                try (Connection conn = Database.connect();
+                                PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+                        stmt.setLong(1, rangeEnd.toEpochMilli());
+                        stmt.setLong(2, rangeStart.toEpochMilli());
+
+                        try (ResultSet rs = stmt.executeQuery()) {
+                                while (rs.next()) {
+                                        result.add(new WorkSession(
+                                                        rs.getString("id"),
+                                                        rs.getString("task_id"),
+                                                        rs.getString("step_id"),
+                                                        rs.getString("task_title"),
+                                                        rs.getString("step_title"),
+                                                        Instant.ofEpochMilli(rs.getLong("started_at_ms")),
+                                                        Instant.ofEpochMilli(rs.getLong("ended_at_ms"))));
                                 }
                         }
                 }

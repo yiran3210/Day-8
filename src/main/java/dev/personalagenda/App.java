@@ -8,12 +8,14 @@ import dev.personalagenda.data.TaskRepository;
 import dev.personalagenda.data.TaskStepRepository;
 import dev.personalagenda.data.TimeBlockRepository;
 import dev.personalagenda.data.CategoryRepository;
+import dev.personalagenda.data.WorkSessionRepository;
 import dev.personalagenda.view.TimelineView;
 import dev.personalagenda.view.TaskStepsView;
 import dev.personalagenda.view.ProjectDashboard;
 import dev.personalagenda.view.FloatingWidget;
 import dev.personalagenda.view.AppIcons;
 import dev.personalagenda.view.UiLayout;
+import dev.personalagenda.view.InsightsView;
 
 // import java.util.ArrayList;
 import java.util.List;
@@ -848,8 +850,22 @@ public class App extends Application {
         });
         categoryTab.setClosable(false);
 
+        InsightsView insightsView = new InsightsView(new WorkSessionRepository());
+
+        ScrollPane insightsScroll = new ScrollPane(insightsView);
+        insightsScroll.setFitToWidth(true);
+
+        Tab insightsTab = new Tab("Insights", insightsScroll);
+        insightsTab.setClosable(false);
+
+        insightsTab.setOnSelectionChanged(event -> {
+            if (insightsTab.isSelected()) {
+                insightsView.reload();
+            }
+        });
+
         TabPane leftTabs = new TabPane(
-                taskTab, scheduleTab, categoryTab);
+                taskTab, scheduleTab, categoryTab, insightsTab);
 
         scheduleRequest = (requestedTask, requestedStep) -> {
 
