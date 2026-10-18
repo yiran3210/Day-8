@@ -95,7 +95,7 @@ public class FloatingWidget {
                 this.mainWindow = mainWindow;
                 this.onDataChanged = onDataChanged;
 
-                window.initStyle(StageStyle.UTILITY);
+                window.initStyle(StageStyle.DECORATED);
                 window.setTitle("Agenda · Mini");
                 AppIcons.apply(window);
                 window.setAlwaysOnTop(true);
