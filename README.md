@@ -90,7 +90,7 @@ No Windows installer in `v0.2.0`; the Portable ZIP is the supported distribution
 
 **Half vibe coding, half learning to tell the code what it actually needs to do.** AI helped with sketches, examples, and debugging; design choices, hands-on Java/SQL learning, testing, and endless little UI fixes were part of the process too.
 
-**半 Vibe Coding，半认真学 Java / SQL。** 用 AI 辅助构思、实现与排错，也把它当作练习工程设计、Git 和真实用户体验的小项目。不宣称完全手写，也不把 AI 生成代码等同于经过验证的软件。
+**半 Vibe Coding，半认真学 Java / SQL。** 用 AI 辅助构思、实现与排错，也把它当作练习工程设计、Git 和真实用户体验的小项目。
 
 ## 🗺️ Status & next / 当前限制与后续
 
