@@ -11,7 +11,49 @@ import java.sql.ResultSet;
 
 public class Database {
 
-    private static final Path DB_PATH = Path.of("F:/AgendaData/agenda.db");
+    private static final Path DB_PATH = resolveDatabasePath();
+
+    private static Path resolveDatabasePath() {
+
+        // 1. Explicit JVM configuration has highest priority.
+        String configured = System.getProperty("agenda.data.dir");
+
+        if (configured == null || configured.isBlank()) {
+            configured = System.getenv("AGENDA_DATA_DIR");
+        }
+
+        if (configured != null && !configured.isBlank()) {
+            return Path.of(configured.trim())
+                    .toAbsolutePath()
+                    .resolve("agenda.db");
+        }
+
+        // 2. Preserve the existing installation and its database.
+        Path legacy = Path.of("F:/AgendaData/agenda.db");
+
+        if (Files.isRegularFile(legacy)) {
+            return legacy;
+        }
+
+        // 3. If the existing data directory is already present,
+        // continue using it.
+        if (Files.isDirectory(legacy.getParent())) {
+            return legacy;
+        }
+
+        // 4. Standard per-user directory on other Windows machines.
+        String localAppData = System.getenv("LOCALAPPDATA");
+
+        if (localAppData != null && !localAppData.isBlank()) {
+            return Path.of(localAppData, "PersonalAgenda", "agenda.db");
+        }
+
+        // 5. Fallback for non-Windows development environments.
+        return Path.of(
+                System.getProperty("user.home"),
+                ".personal-agenda",
+                "agenda.db");
+    }
 
     public static Connection connect() throws SQLException {
         return DriverManager.getConnection("jdbc:sqlite:" + DB_PATH);

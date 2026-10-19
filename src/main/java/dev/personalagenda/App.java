@@ -31,6 +31,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
+import java.io.IOException;
 
 import javafx.application.Application;
 import javafx.application.Platform;
@@ -54,6 +55,7 @@ import javafx.scene.control.DatePicker;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SplitPane;
+import javafx.scene.control.Alert;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
@@ -84,7 +86,25 @@ public class App extends Application {
     @Override
     public void start(Stage stage) throws Exception {
 
-        Database.initialize();
+        try {
+            Database.initialize();
+
+        } catch (SQLException | IOException ex) {
+
+            Alert alert = new Alert(Alert.AlertType.ERROR);
+
+            alert.setTitle("Personal Agenda");
+            alert.setHeaderText("Unable to open Agenda database");
+            alert.setContentText(
+                    "Check the data directory and file permissions.\n\n"
+                            + ex.getMessage());
+
+            alert.showAndWait();
+
+            Platform.exit();
+            return;
+        }
+
         categoryColors.putAll(categoryRepository.findAll());
         TaskRepository repository = new TaskRepository();
 
