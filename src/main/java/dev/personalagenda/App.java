@@ -93,7 +93,7 @@ public class App extends Application {
 
             Alert alert = new Alert(Alert.AlertType.ERROR);
 
-            alert.setTitle("Personal Agenda");
+            alert.setTitle("Day 8 · 星期八");
             alert.setHeaderText("Unable to open Agenda database");
             alert.setContentText(
                     "Check the data directory and file permissions.\n\n"
@@ -113,7 +113,7 @@ public class App extends Application {
 
         List<Task> tasks = repository.findAll();
 
-        Label title = new Label("Personal Agenda");
+        Label title = new Label("Day 8 · 星期八");
 
         TextField taskInput = new TextField();
         taskInput.setPromptText("Enter a task: ");
@@ -1070,7 +1070,7 @@ public class App extends Application {
         scene.getStylesheets().add(
                 getClass().getResource("/styles/light.css").toExternalForm());
 
-        stage.setTitle("Personal Agenda");
+        stage.setTitle("Day 8 · 星期八");
         AppIcons.apply(stage);
         stage.setScene(scene);
 

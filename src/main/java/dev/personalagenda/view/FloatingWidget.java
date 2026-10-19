@@ -154,7 +154,7 @@ public class FloatingWidget {
                 this.focusService = Objects.requireNonNull(focusService);
 
                 window.initStyle(StageStyle.DECORATED);
-                window.setTitle("Agenda · Mini");
+                window.setTitle("Day 8 · Mini");
                 window.setAlwaysOnTop(true);
                 window.setMinWidth(280);
                 window.setMinHeight(260);
@@ -345,7 +345,7 @@ public class FloatingWidget {
                 tabs.setMinHeight(Region.USE_PREF_SIZE);
                 tabs.setMaxHeight(Region.USE_PREF_SIZE);
 
-                Button openButton = new Button("Open Agenda");
+                Button openButton = new Button("Open Day 8");
                 openButton.setOnAction(e -> {
                         mainWindow.show();
                         mainWindow.setIconified(false);
