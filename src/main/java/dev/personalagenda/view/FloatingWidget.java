@@ -399,6 +399,20 @@ public class FloatingWidget {
                         // Intentional: hiding does not stop an ongoing work session.
                 });
 
+                window.addEventFilter(
+                                WindowEvent.WINDOW_CLOSE_REQUEST,
+                                event -> {
+
+                                        // If Mini is the only visible window,
+                                        // restore Main before closing Mini.
+                                        if (!mainWindow.isShowing()) {
+
+                                                mainWindow.show();
+                                                mainWindow.setIconified(false);
+                                                mainWindow.toFront();
+                                        }
+                                });
+
                 mainWindow.addEventFilter(
                                 WindowEvent.WINDOW_CLOSE_REQUEST,
                                 event -> handleMainWindowClose(event));
@@ -524,6 +538,16 @@ public class FloatingWidget {
                         window.toFront();
                 }
                 updateSessionTimer();
+        }
+
+        public void showMiniOnly() {
+
+                // Show Mini first to avoid closing the last visible Stage.
+                show();
+
+                if (window.isShowing()) {
+                        mainWindow.hide();
+                }
         }
 
         private void refresh() {

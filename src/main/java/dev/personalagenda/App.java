@@ -9,7 +9,6 @@ import dev.personalagenda.data.TaskStepRepository;
 import dev.personalagenda.data.TimeBlockRepository;
 import dev.personalagenda.data.CategoryRepository;
 import dev.personalagenda.data.WorkSessionRepository;
-import dev.personalagenda.data.WorkSessionRepository;
 import dev.personalagenda.view.TimelineView;
 import dev.personalagenda.view.TaskStepsView;
 import dev.personalagenda.view.ProjectDashboard;
@@ -63,8 +62,10 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.paint.Color;
 import javafx.scene.image.Image;
-import javafx.stage.Stage;
 import javafx.scene.Scene;
+import javafx.stage.Stage;
+import javafx.stage.WindowEvent;
+import javafx.event.Event;
 
 public class App extends Application {
 
@@ -1121,10 +1122,46 @@ public class App extends Application {
         };
 
         Button openWidgetButton = new Button("Open Mini Widget");
+
         openWidgetButton.setOnAction(
                 event -> floatingWidget.show());
 
-        timeline.getChildren().add(0, openWidgetButton);
+        MenuButton windowMenu = new MenuButton("Window");
+
+        MenuItem miniOnlyItem = new MenuItem("Hide Main · Keep Mini");
+
+        MenuItem exitItem = new MenuItem("Exit Agenda");
+
+        windowMenu.getItems().addAll(
+                miniOnlyItem,
+                exitItem);
+
+        // Enter Mini-only mode.
+        miniOnlyItem.setOnAction(event -> floatingWidget.showMiniOnly());
+
+        // Request an application exit using the existing
+        // main-window close confirmation.
+        exitItem.setOnAction(event -> {
+
+            WindowEvent closeRequest = new WindowEvent(
+                    stage,
+                    WindowEvent.WINDOW_CLOSE_REQUEST);
+
+            Event.fireEvent(stage, closeRequest);
+
+            if (!closeRequest.isConsumed()) {
+                stage.hide();
+            }
+        });
+
+        HBox windowControls = new HBox(
+                8,
+                openWidgetButton,
+                windowMenu);
+
+        windowControls.setAlignment(Pos.CENTER_LEFT);
+
+        timeline.getChildren().add(0, windowControls);
 
         stage.show();
     }
