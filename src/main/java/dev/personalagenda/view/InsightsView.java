@@ -47,7 +47,6 @@ public class InsightsView extends VBox {
     private final ComboBox<Period> periodChoice = new ComboBox<>();
     private final DatePicker anchorDate = new DatePicker(LocalDate.now());
 
-    private final Label summary = new Label();
     private final Label status = new Label();
 
     private final NumberAxis xAxis = new NumberAxis();
@@ -76,8 +75,8 @@ public class InsightsView extends VBox {
 
         this.repository = repository;
 
-        setSpacing(14);
-        setPadding(new Insets(16));
+        setSpacing(12);
+        setPadding(new Insets(14));
         setMaxWidth(Double.MAX_VALUE);
         getStyleClass().add("content-card");
 
@@ -90,6 +89,16 @@ public class InsightsView extends VBox {
         Button previous = new Button("◀");
         Button next = new Button("▶");
         Button today = new Button("Today");
+
+        previous.setTooltip(new Tooltip("Previous period"));
+        next.setTooltip(new Tooltip("Next period"));
+        today.setTooltip(new Tooltip("Return to today"));
+
+        previous.setMinWidth(Region.USE_PREF_SIZE);
+        next.setMinWidth(Region.USE_PREF_SIZE);
+        today.setMinWidth(Region.USE_PREF_SIZE);
+
+        anchorDate.setPrefWidth(160);
 
         previous.setOnAction(e -> movePeriod(-1));
         next.setOnAction(e -> movePeriod(1));
@@ -146,12 +155,12 @@ public class InsightsView extends VBox {
         yAxis.setMinorTickVisible(false);
 
         hoursChart.getStyleClass().add("insights-chart");
-        hoursChart.setMaxHeight(340);
+        hoursChart.setMaxHeight(300);
         hoursChart.setAnimated(false);
         hoursChart.setLegendVisible(false);
         hoursChart.setCreateSymbols(true);
-        hoursChart.setMinHeight(260);
-        hoursChart.setPrefHeight(320);
+        hoursChart.setMinHeight(220);
+        hoursChart.setPrefHeight(260);
 
         completionXAxis.setAutoRanging(false);
         completionYAxis.setAutoRanging(false);
@@ -161,13 +170,13 @@ public class InsightsView extends VBox {
         completionChart.setAnimated(false);
         completionChart.setLegendVisible(false);
         completionChart.setCreateSymbols(true);
-        completionChart.setPrefHeight(290);
-        completionChart.setMinHeight(240);
+        completionChart.setMinHeight(220);
+        completionChart.setPrefHeight(260);
+        completionChart.setMaxHeight(300);
 
         completionChart.getStyleClass().addAll(
                 "insights-chart", "completion-chart");
 
-        summary.setWrapText(true);
         status.setWrapText(true);
 
         Label explanation = new Label(
