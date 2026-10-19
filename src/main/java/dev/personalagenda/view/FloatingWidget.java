@@ -11,6 +11,7 @@ import dev.personalagenda.model.Task;
 import dev.personalagenda.model.TaskStep;
 import dev.personalagenda.model.TimeBlock;
 import dev.personalagenda.model.WorkSession;
+import dev.personalagenda.service.FocusSessionService;
 
 import java.net.URL;
 import java.sql.SQLException;
@@ -64,6 +65,7 @@ public class FloatingWidget {
         private final Stage window = new Stage();
         private final Stage mainWindow;
         private final Runnable onDataChanged;
+        private final FocusSessionService focusService;
 
         private final TaskRepository tasks = new TaskRepository();
         private final TaskStepRepository steps = new TaskStepRepository();
@@ -114,9 +116,6 @@ public class FloatingWidget {
         private final VBox recentSessionsList = new VBox(5);
         private final TitledPane recentSessionsPane = new TitledPane("Recent sessions", recentSessionsList);
 
-        private WorkSession activeSession;
-        private WorkSession pausedSession;
-        private Duration focusElapsed = Duration.ZERO;
         private boolean unresolvedSession;
         private long finishedMillisToday;
         private LocalDate finishedMillisDate;
@@ -142,9 +141,13 @@ public class FloatingWidget {
         private Runnable resizeWidgetAction = () -> {
         };
 
-        public FloatingWidget(Stage mainWindow, Runnable onDataChanged) {
+        public FloatingWidget(
+                        Stage mainWindow,
+                        Runnable onDataChanged,
+                        FocusSessionService focusService) {
                 this.mainWindow = mainWindow;
                 this.onDataChanged = onDataChanged;
+                this.focusService = Objects.requireNonNull(focusService);
 
                 window.initStyle(StageStyle.DECORATED);
                 window.setTitle("Agenda · Mini");
@@ -416,7 +419,7 @@ public class FloatingWidget {
         private void handleMainWindowClose(WindowEvent event) {
 
                 // No recording: normal exit.
-                if (activeSession == null) {
+                if (focusService.state() != FocusSessionService.State.RUNNING) {
                         window.hide();
                         return;
                 }
@@ -479,7 +482,7 @@ public class FloatingWidget {
                         stopFocusSession();
 
                         // If database saving failed, do not exit.
-                        if (activeSession != null) {
+                        if (focusService.state() == FocusSessionService.State.RUNNING) {
                                 event.consume();
                                 return;
                         }
@@ -499,7 +502,7 @@ public class FloatingWidget {
         }
 
         private boolean focusIsLocked() {
-                return activeSession != null || pausedSession != null;
+                return focusService.state() != FocusSessionService.State.IDLE;
         }
 
         private void requestResize() {
@@ -512,7 +515,8 @@ public class FloatingWidget {
                         window.show();
                         dataClock.play();
                         sessionTicker.play();
-                        if (activeSession == null && !unresolvedSession) {
+                        if (focusService.state() == FocusSessionService.State.IDLE
+                                        && !unresolvedSession) {
                                 // Run after the stage is visible so the owner-owned dialog can be focused.
                                 Platform.runLater(this::recoverUnfinishedSession);
                         }
@@ -616,6 +620,9 @@ public class FloatingWidget {
 
         private void updateFocusTask(TimeBlock current, List<Task> allTasks,
                         LocalDate today) throws SQLException {
+
+                WorkSession activeSession = focusService.activeSession();
+                WorkSession pausedSession = focusService.pausedSession();
                 String wantedTaskId = activeSession != null ? activeSession.taskId()
                                 : pausedSession != null ? pausedSession.taskId() : manualFocusTaskId;
                 if (wantedTaskId == null && current != null)
@@ -741,6 +748,9 @@ public class FloatingWidget {
         }
 
         private void updateScheduleFocusStatus() {
+
+                WorkSession activeSession = focusService.activeSession();
+                WorkSession pausedSession = focusService.pausedSession();
 
                 TimeBlock planned = scheduledNow;
                 Task selectedTask = currentFocusedTask;
@@ -951,110 +961,122 @@ public class FloatingWidget {
         // -------- Persistent focus sessions --------
 
         private void startFocusSession() {
-                if (unresolvedSession || activeSession != null)
+
+                if (unresolvedSession
+                                || focusService.state() == FocusSessionService.State.RUNNING) {
                         return;
+                }
+
                 Task task = currentFocusedTask;
                 TaskStep step = focusStepChoice.getValue();
+
                 if (task == null) {
                         sessionStatusLabel.setText("Choose a task first.");
                         return;
                 }
-                if (pausedSession != null) {
-                        String stepId = step == null ? null : step.id();
-                        if (!Objects.equals(task.getId(), pausedSession.taskId())
-                                        || !Objects.equals(stepId, pausedSession.stepId())) {
-                                sessionStatusLabel.setText("Resume requires the original Task/Step.");
-                                return;
-                        }
-                }
+
                 try {
-                        WorkSession started = workSessions.start(task, step);
-                        if (pausedSession == null)
-                                focusElapsed = Duration.ZERO;
-                        activeSession = started;
-                        pausedSession = null;
+                        if (focusService.state() == FocusSessionService.State.PAUSED) {
+                                focusService.resume(task, step);
+                        } else {
+                                focusService.start(task, step);
+                        }
+
                         sessionStatusLabel.setText("Recording actual work.");
                         reloadWorkHistorySafely();
-                } catch (SQLException | IllegalArgumentException ex) {
+
+                } catch (SQLException | IllegalArgumentException
+                                | IllegalStateException ex) {
                         sessionStatusLabel.setText("Start failed: " + ex.getMessage());
                 }
+
                 updateSessionTimer();
                 updateScheduleFocusStatus();
         }
 
         private void pauseFocusSession() {
-                if (activeSession == null)
+
+                if (focusService.state() != FocusSessionService.State.RUNNING) {
                         return;
+                }
+
                 try {
-                        Instant endedAt = Instant.now();
-                        if (!workSessions.stop(activeSession.id(), endedAt)) {
-                                throw new SQLException("Session could not be closed.");
-                        }
-                        focusElapsed = focusElapsed.plus(
-                                        Duration.between(activeSession.startedAt(), endedAt));
-                        pausedSession = activeSession;
-                        activeSession = null;
+                        focusService.pause();
+
                         sessionStatusLabel.setText("Paused.");
                         reloadWorkHistorySafely();
+
                 } catch (SQLException ex) {
                         sessionStatusLabel.setText("Pause failed: " + ex.getMessage());
                 }
+
                 updateSessionTimer();
                 updateScheduleFocusStatus();
         }
 
         private void stopFocusSession() {
+
+                if (focusService.state() == FocusSessionService.State.IDLE) {
+                        return;
+                }
+
                 try {
-                        if (activeSession != null) {
-                                Instant endedAt = Instant.now();
-                                if (!workSessions.stop(activeSession.id(), endedAt)) {
-                                        throw new SQLException("Session could not be closed.");
-                                }
-                        }
-                        activeSession = null;
-                        pausedSession = null;
-                        focusElapsed = Duration.ZERO;
+                        focusService.stop();
+
                         sessionStatusLabel.setText("Focus finished. Time saved.");
                         reloadWorkHistorySafely();
+
+                        // Restore automatic Timeline / Focus selection if appropriate.
+                        refresh();
+
                 } catch (SQLException ex) {
                         sessionStatusLabel.setText("Stop failed: " + ex.getMessage());
                 }
 
-                refresh();
                 updateSessionTimer();
                 updateScheduleFocusStatus();
         }
 
         private void updateSessionTimer() {
-                Duration elapsed = focusElapsed;
-                if (activeSession != null) {
-                        elapsed = elapsed.plus(Duration.between(
-                                        activeSession.startedAt(), Instant.now()));
-                }
+
+                Duration elapsed = focusService.elapsed(Instant.now());
+
                 long seconds = Math.max(0, elapsed.getSeconds());
-                sessionTimerLabel.setText(String.format("%02d:%02d:%02d",
-                                seconds / 3600, (seconds % 3600) / 60, seconds % 60));
-                boolean recording = activeSession != null;
-                boolean paused = pausedSession != null;
+
+                sessionTimerLabel.setText(String.format(
+                                "%02d:%02d:%02d",
+                                seconds / 3600,
+                                (seconds % 3600) / 60,
+                                seconds % 60));
+
+                boolean recording = focusService.state() == FocusSessionService.State.RUNNING;
+
+                boolean paused = focusService.state() == FocusSessionService.State.PAUSED;
+
                 boolean locked = focusIsLocked();
+
                 sessionStartButton.setText(paused ? "Resume" : "Start");
+
                 sessionStartButton.setDisable(
                                 recording || unresolvedSession || currentFocusedTask == null);
+
                 sessionPauseButton.setDisable(!recording);
                 sessionStopButton.setDisable(!locked);
+
                 focusTaskChoice.setDisable(locked);
                 focusStepChoice.setDisable(locked || currentFocusedTask == null);
-
                 wholeTaskButton.setDisable(locked || currentFocusedTask == null);
-
                 autoFocusButton.setDisable(locked);
+
                 recoverSessionButton.setVisible(unresolvedSession);
+
                 updateActualTodayLabel();
         }
 
         private void recoverUnfinishedSession() {
-                if (activeSession != null)
+                if (focusService.state() != FocusSessionService.State.IDLE) {
                         return;
+                }
                 try {
                         Optional<WorkSession> pending = workSessions.findActive();
                         if (pending.isEmpty()) {
@@ -1186,6 +1208,9 @@ public class FloatingWidget {
                         return;
                 }
                 long totalMillis = finishedMillisToday;
+
+                WorkSession activeSession = focusService.activeSession();
+
                 if (activeSession != null) {
                         ZoneId zone = ZoneId.systemDefault();
                         Instant dayStart = today.atStartOfDay(zone).toInstant();

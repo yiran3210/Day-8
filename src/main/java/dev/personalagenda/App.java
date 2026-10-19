@@ -9,6 +9,7 @@ import dev.personalagenda.data.TaskStepRepository;
 import dev.personalagenda.data.TimeBlockRepository;
 import dev.personalagenda.data.CategoryRepository;
 import dev.personalagenda.data.WorkSessionRepository;
+import dev.personalagenda.data.WorkSessionRepository;
 import dev.personalagenda.view.TimelineView;
 import dev.personalagenda.view.TaskStepsView;
 import dev.personalagenda.view.ProjectDashboard;
@@ -16,6 +17,7 @@ import dev.personalagenda.view.FloatingWidget;
 import dev.personalagenda.view.AppIcons;
 import dev.personalagenda.view.UiLayout;
 import dev.personalagenda.view.InsightsView;
+import dev.personalagenda.service.FocusSessionService;
 
 // import java.util.ArrayList;
 import java.util.List;
@@ -960,9 +962,8 @@ public class App extends Application {
         stage.setTitle("Personal Agenda");
         AppIcons.apply(stage);
         stage.setScene(scene);
-        stage.getIcons().add(
-                new Image(getClass().getResourceAsStream(
-                        "/icons/agenda-icon.png")));
+
+        FocusSessionService focusService = new FocusSessionService(new WorkSessionRepository());
 
         FloatingWidget floatingWidget = new FloatingWidget(
                 stage,
@@ -984,7 +985,8 @@ public class App extends Application {
                     } catch (SQLException ex) {
                         ex.printStackTrace();
                     }
-                });
+                },
+                focusService);
 
         Button openWidgetButton = new Button("Open Mini Widget");
         openWidgetButton.setOnAction(
