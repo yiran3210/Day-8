@@ -1,0 +1,62 @@
+name: Build Day 8 for macOS
+
+on:
+  push:
+    branches:
+      - feature/macos-support
+    paths:
+      - 'src/**'
+      - 'pom.xml'
+      - 'scripts/package-macos.sh'
+      - '.github/workflows/build-macos.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos-app:
+    name: macOS ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+            uname_arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+            uname_arch: x86_64
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25 (including jmods)
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+          java-package: jdk+jmods
+          cache: maven
+
+      - name: Verify runner architecture
+        shell: bash
+        run: |
+          echo "Runner arch: $(uname -m)"
+          java -version
+          mvn -version
+          test "$(uname -m)" = "${{ matrix.uname_arch }}"
+
+      - name: Build macOS app and ZIP
+        shell: bash
+        run: bash ./scripts/package-macos.sh
+
+      - name: Upload unsigned app archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: Day8-macos-${{ matrix.arch }}
+          path: dist/Day8-v*-macos-${{ matrix.arch }}.zip
+          if-no-files-found: error
+          retention-days: 14

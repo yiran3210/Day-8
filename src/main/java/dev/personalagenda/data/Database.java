@@ -18,16 +18,21 @@ public class Database {
 
     private static Path resolveDatabasePath() {
 
-        // 1. Explicit JVM configuration has highest priority.
+        // 1. Explicit launch overrides take priority over stored preferences.
         String configured = System.getProperty("agenda.data.dir");
-
         if (configured == null || configured.isBlank()) {
             configured = System.getenv("AGENDA_DATA_DIR");
         }
+        if (configured != null && !configured.isBlank()) {
+            return Path.of(configured.trim())
+                    .toAbsolutePath()
+                    .normalize()
+                    .resolve("agenda.db");
+        }
 
+        // 2. User-selected directory (applies on the next launch).
         String saved = Preferences.userNodeForPackage(Database.class)
                 .get(DATA_DIR_PREF_KEY, null);
-
         if (saved != null && !saved.isBlank()) {
             return Path.of(saved)
                     .toAbsolutePath()
@@ -35,37 +40,32 @@ public class Database {
                     .resolve("agenda.db");
         }
 
-        if (configured != null && !configured.isBlank()) {
-            return Path.of(configured.trim())
-                    .toAbsolutePath()
-                    .resolve("agenda.db");
+        String os = System.getProperty("os.name", "")
+                .toLowerCase(java.util.Locale.ROOT);
+
+        if (os.contains("win")) {
+            // Preserve data on existing Windows installations without migration.
+            Path legacy = Path.of("F:/AgendaData/agenda.db");
+            if (Files.isRegularFile(legacy)
+                    || Files.isDirectory(legacy.getParent())) {
+                return legacy;
+            }
+
+            String localAppData = System.getenv("LOCALAPPDATA");
+            if (localAppData != null && !localAppData.isBlank()) {
+                return Path.of(localAppData, "PersonalAgenda", "agenda.db");
+            }
         }
 
-        // 2. Preserve the existing installation and its database.
-        Path legacy = Path.of("F:/AgendaData/agenda.db");
-
-        if (Files.isRegularFile(legacy)) {
-            return legacy;
+        if (os.contains("mac")) {
+            // Normal writable per-user app data location on macOS.
+            return Path.of(System.getProperty("user.home"),
+                    "Library", "Application Support", "Day 8", "agenda.db");
         }
 
-        // 3. If the existing data directory is already present,
-        // continue using it.
-        if (Files.isDirectory(legacy.getParent())) {
-            return legacy;
-        }
-
-        // 4. Standard per-user directory on other Windows machines.
-        String localAppData = System.getenv("LOCALAPPDATA");
-
-        if (localAppData != null && !localAppData.isBlank()) {
-            return Path.of(localAppData, "PersonalAgenda", "agenda.db");
-        }
-
-        // 5. Fallback for non-Windows development environments.
-        return Path.of(
-                System.getProperty("user.home"),
-                ".personal-agenda",
-                "agenda.db");
+        // Fallback for Linux and other development environments.
+        return Path.of(System.getProperty("user.home"),
+                ".personal-agenda", "agenda.db");
     }
 
     public static Connection connect() throws SQLException {
