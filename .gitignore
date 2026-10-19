@@ -1,7 +1,8 @@
-# Maven build outputs
-target/
+# Build and distribution
+/target/
+/dist/
 
-# IDE-specific files
+# IDE
 .idea/
 .vscode/
 *.iml
@@ -9,7 +10,7 @@ target/
 .project
 .settings/
 
-# Private data
+# Local databases and private data
 *.db
 *.db-journal
 *.db-wal
@@ -18,6 +19,6 @@ target/
 /data/
 /backups/
 
-# System files
+# System
 .DS_Store
 Thumbs.db
