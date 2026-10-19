@@ -31,7 +31,7 @@ jobs:
 
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up JDK 25 (including jmods)
         uses: actions/setup-java@v6
@@ -54,7 +54,7 @@ jobs:
         run: bash ./scripts/package-macos.sh
 
       - name: Upload unsigned app archive
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Day8-macos-${{ matrix.arch }}
           path: dist/Day8-v*-macos-${{ matrix.arch }}.zip
