@@ -116,6 +116,30 @@ public class ProjectRepository {
         return taskIds;
     }
 
+    public String findProjectIdForTask(String taskId)
+            throws SQLException {
+
+        if (taskId == null) {
+            return null;
+        }
+
+        String sql = """
+                SELECT project_id
+                FROM task_project_links
+                WHERE task_id = ?
+                """;
+
+        try (Connection conn = Database.connect();
+                PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setString(1, taskId);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next() ? rs.getString("project_id") : null;
+            }
+        }
+    }
+
     public void update(Project project) throws SQLException {
 
         String sql = """

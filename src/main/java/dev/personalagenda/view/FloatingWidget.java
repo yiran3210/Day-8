@@ -130,6 +130,9 @@ public class FloatingWidget {
         private final VBox clockFocusCard = new VBox(5, clockFocusLabel, clockFocusCategory);
         private final ComboBox<Project> clockProjectChoice = new ComboBox<>();
         private boolean updatingProjectChoice;
+        private final Button autoProjectButton = new Button("Auto");
+        private boolean manualProjectOverride = false;
+        private String lastProjectTaskId;
 
         // The 30-second refresh accesses repositories. The one-second ticker doesn't.
         private final Timeline dataClock = new Timeline(
@@ -312,9 +315,13 @@ public class FloatingWidget {
                                 return null;
                         }
                 });
+
                 clockProjectChoice.setOnAction(e -> {
                         if (updatingProjectChoice)
                                 return;
+
+                        manualProjectOverride = true;
+
                         try {
                                 refreshProjectProgress(tasks.findAll());
                         } catch (SQLException ex) {
@@ -322,6 +329,12 @@ public class FloatingWidget {
                                 ex.printStackTrace();
                         }
                 });
+
+                autoProjectButton.setOnAction(e -> {
+                        manualProjectOverride = false;
+                        refresh();
+                });
+
                 clockTimeLabel.getStyleClass().add("mini-clock-time");
                 clockFocusLabel.setWrapText(true);
                 clockFocusCategory.setWrapText(true);
@@ -331,9 +344,18 @@ public class FloatingWidget {
                 VBox clockInfo = new VBox(12, clockTimeLabel, clockFocusCard);
                 HBox clockHero = new HBox(10, clockFace, clockInfo);
                 clockHero.setAlignment(Pos.CENTER_LEFT);
+
+                HBox projectPicker = new HBox(6, clockProjectChoice, autoProjectButton);
+
+                projectPicker.setAlignment(Pos.CENTER_LEFT);
+                HBox.setHgrow(clockProjectChoice, Priority.ALWAYS);
+
+                autoProjectButton.setMinWidth(Region.USE_PREF_SIZE);
+
                 VBox clockContent = new VBox(10, clockHero,
-                                new Label("Project Progress"), clockProjectChoice,
+                                new Label("Project Progress"), projectPicker,
                                 projectBar, projectProgressLabel, projectExpectedLabel);
+
                 clockContent.setAlignment(Pos.TOP_CENTER);
                 clockContent.getStyleClass().add("mini-card");
 
@@ -616,14 +638,42 @@ public class FloatingWidget {
                         nextLabel.setText(next == null ? "Next: No upcoming activity"
                                         : "Next: " + next.title() + " · " + next.start().toLocalTime());
 
-                        String selectedProjectId = clockProjectChoice.getValue() == null
-                                        ? null
-                                        : clockProjectChoice.getValue().id();
                         List<Project> availableProjects = projects.findAll();
+
+                        // updateFocusTask() has already resolved the active/paused Task.
+                        String focusTaskId = currentFocusedTask == null
+                                        ? null
+                                        : currentFocusedTask.getId();
+
+                        // A new Focus Task should restore automatic Project selection.
+                        if (!Objects.equals(lastProjectTaskId, focusTaskId)) {
+                                manualProjectOverride = false;
+                                lastProjectTaskId = focusTaskId;
+                        }
+
+                        String desiredProjectId;
+
+                        if (manualProjectOverride) {
+
+                                Project manuallySelected = clockProjectChoice.getValue();
+
+                                desiredProjectId = manuallySelected == null
+                                                ? null
+                                                : manuallySelected.id();
+
+                        } else {
+
+                                // Follow the Project linked to the current Focus Task.
+                                desiredProjectId = projects.findProjectIdForTask(focusTaskId);
+                        }
+
+                        final String targetProjectId = desiredProjectId;
+
                         Project selectedProject = availableProjects.stream()
-                                        .filter(project -> project.id().equals(selectedProjectId))
+                                        .filter(project -> Objects.equals(project.id(), targetProjectId))
                                         .findFirst()
-                                        .orElse(availableProjects.isEmpty() ? null : availableProjects.get(0));
+                                        .orElse(null);
+
                         updatingProjectChoice = true;
                         try {
                                 clockProjectChoice.getItems().setAll(availableProjects);
@@ -915,7 +965,12 @@ public class FloatingWidget {
                 if (project == null) {
                         projectBar.setValues(0, 0);
                         projectBar.setExpected(0);
-                        projectProgressLabel.setText("No project selected");
+                        projectProgressLabel.setText(
+                                        manualProjectOverride
+                                                        ? "No project selected"
+                                                        : currentFocusedTask == null
+                                                                        ? "No focus task selected"
+                                                                        : "This task is not linked to a project");
                         projectExpectedLabel.setText("");
                         return;
                 }
@@ -1009,7 +1064,7 @@ public class FloatingWidget {
                         }
 
                         sessionStatusLabel.setText("Recording actual work.");
-                        reloadWorkHistorySafely();
+                        refresh();
 
                 } catch (SQLException | IllegalArgumentException
                                 | IllegalStateException ex) {
