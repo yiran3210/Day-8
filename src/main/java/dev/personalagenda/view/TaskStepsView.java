@@ -22,6 +22,7 @@ public class TaskStepsView extends VBox {
     private final TaskStepRepository stepRepository = new TaskStepRepository();
     private final Runnable onChanged;
     private final Consumer<TaskStep> onSchedule;
+    private final Consumer<TaskStep> onFocus;
 
     private final ProgressBar bar = new ProgressBar(0);
     private final Label summary = new Label();
@@ -32,13 +33,15 @@ public class TaskStepsView extends VBox {
             CheckBox parentCheckbox,
             TaskRepository taskRepository,
             Runnable onChanged,
-            Consumer<TaskStep> onSchedule) {
+            Consumer<TaskStep> onSchedule,
+            Consumer<TaskStep> onFocus) {
 
         this.task = task;
         this.parentCheckbox = parentCheckbox;
         this.taskRepository = taskRepository;
         this.onChanged = onChanged;
         this.onSchedule = onSchedule;
+        this.onFocus = onFocus;
 
         setSpacing(6);
         getStyleClass().add("task-steps");
@@ -179,6 +182,11 @@ public class TaskStepsView extends VBox {
                         step.estimatedMinutes() + " min");
 
                 Button scheduleButton = new Button("Schedule");
+
+                Button focusButton = new Button("Focus");
+
+                focusButton.setOnAction(event -> onFocus.accept(step));
+
                 Button deleteButton = new Button("×");
 
                 HBox row = new HBox(
@@ -203,6 +211,7 @@ public class TaskStepsView extends VBox {
 
                 HBox stepActions = UiLayout.rightActions(
                         scheduleButton,
+                        focusButton,
                         editStepButton,
                         deleteButton);
 

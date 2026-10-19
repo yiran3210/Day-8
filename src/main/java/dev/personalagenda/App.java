@@ -8,12 +8,16 @@ import dev.personalagenda.data.TaskRepository;
 import dev.personalagenda.data.TaskStepRepository;
 import dev.personalagenda.data.TimeBlockRepository;
 import dev.personalagenda.data.CategoryRepository;
+import dev.personalagenda.data.WorkSessionRepository;
 import dev.personalagenda.view.TimelineView;
 import dev.personalagenda.view.TaskStepsView;
 import dev.personalagenda.view.ProjectDashboard;
 import dev.personalagenda.view.FloatingWidget;
 import dev.personalagenda.view.AppIcons;
 import dev.personalagenda.view.UiLayout;
+import dev.personalagenda.view.InsightsView;
+import dev.personalagenda.view.DataLocationDialog;
+import dev.personalagenda.service.FocusSessionService;
 
 // import java.util.ArrayList;
 import java.util.List;
@@ -27,6 +31,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
+import java.io.IOException;
 
 import javafx.application.Application;
 import javafx.application.Platform;
@@ -50,6 +56,7 @@ import javafx.scene.control.DatePicker;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SplitPane;
+import javafx.scene.control.Alert;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
@@ -59,8 +66,10 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.paint.Color;
 import javafx.scene.image.Image;
-import javafx.stage.Stage;
 import javafx.scene.Scene;
+import javafx.stage.Stage;
+import javafx.stage.WindowEvent;
+import javafx.event.Event;
 
 public class App extends Application {
 
@@ -73,11 +82,30 @@ public class App extends Application {
     private final Label dailyProgressDetails = new Label();
 
     private BiConsumer<Task, TaskStep> scheduleRequest;
+    private BiConsumer<Task, TaskStep> focusRequest;
 
     @Override
     public void start(Stage stage) throws Exception {
 
-        Database.initialize();
+        try {
+            Database.initialize();
+
+        } catch (SQLException | IOException ex) {
+
+            Alert alert = new Alert(Alert.AlertType.ERROR);
+
+            alert.setTitle("Day 8 · 星期八");
+            alert.setHeaderText("Unable to open Agenda database");
+            alert.setContentText(
+                    "Check the data directory and file permissions.\n\n"
+                            + ex.getMessage());
+
+            alert.showAndWait();
+
+            Platform.exit();
+            return;
+        }
+
         categoryColors.putAll(categoryRepository.findAll());
         TaskRepository repository = new TaskRepository();
 
@@ -86,7 +114,7 @@ public class App extends Application {
 
         List<Task> tasks = repository.findAll();
 
-        Label title = new Label("Personal Agenda");
+        Label title = new Label("Day 8 · 星期八");
 
         TextField taskInput = new TextField();
         taskInput.setPromptText("Enter a task: ");
@@ -236,13 +264,94 @@ public class App extends Application {
                 scheduleHeaderSpacer, Priority.ALWAYS);
 
         scheduleHeader.setAlignment(Pos.CENTER_LEFT);
+
+        Button startCurrentButton = new Button("Start Current");
+
+        startCurrentButton.setMinWidth(Region.USE_PREF_SIZE);
+
+        // Insert between the spacer and date picker.
+        scheduleHeader.getChildren().add(2, startCurrentButton);
+
+        startCurrentButton.setOnAction(event -> {
+            try {
+                LocalDateTime now = LocalDateTime.now();
+
+                List<TimeBlock> currentBlocks = blockRepository
+                        .findForDate(now.toLocalDate())
+                        .stream()
+                        .filter(block -> !now.isBefore(block.start())
+                                && now.isBefore(block.end()))
+                        .toList();
+
+                if (currentBlocks.size() != 1) {
+                    showFocusMessage(
+                            stage,
+                            currentBlocks.isEmpty()
+                                    ? "No activity is currently scheduled."
+                                    : "Multiple activities overlap. "
+                                            + "Please choose a Task in To-Do.");
+                    return;
+                }
+
+                TimeBlock current = currentBlocks.get(0);
+
+                if (current.type() != TimeBlock.Type.TASK
+                        || current.taskId() == null) {
+
+                    showFocusMessage(
+                            stage,
+                            "Current activity is not linked to a Task.");
+                    return;
+                }
+
+                Task task = repository.findAll().stream()
+                        .filter(t -> t.getId().equals(current.taskId()))
+                        .findFirst()
+                        .orElse(null);
+
+                if (task == null) {
+                    showFocusMessage(stage, "Linked Task no longer exists.");
+                    return;
+                }
+
+                TaskStep step = null;
+
+                if (current.stepId() != null) {
+                    step = taskStepRepository
+                            .findByTaskId(task.getId())
+                            .stream()
+                            .filter(s -> s.id().equals(current.stepId()))
+                            .findFirst()
+                            .orElse(null);
+
+                    if (step == null) {
+                        showFocusMessage(stage, "Linked Step no longer exists.");
+                        return;
+                    }
+                }
+
+                if (focusRequest != null) {
+                    focusRequest.accept(task, step);
+                }
+
+            } catch (SQLException ex) {
+                showFocusMessage(
+                        stage,
+                        "Unable to load current activity: " + ex.getMessage());
+            }
+        });
+
         scheduleDateInput.setMinWidth(Region.USE_PREF_SIZE);
 
         TextField blockTitleInput = new TextField();
         blockTitleInput.setPromptText("Activity name");
 
-        TextField startTimeInput = new TextField("16:00");
-        TextField endTimeInput = new TextField("17:00");
+        LocalTime initialStart = LocalTime.now()
+                .truncatedTo(ChronoUnit.MINUTES);
+
+        TextField startTimeInput = new TextField(initialStart.toString());
+
+        TextField endTimeInput = new TextField(initialStart.plusHours(1).toString());
 
         startTimeInput.setPrefColumnCount(5);
         endTimeInput.setPrefColumnCount(5);
@@ -848,8 +957,22 @@ public class App extends Application {
         });
         categoryTab.setClosable(false);
 
+        InsightsView insightsView = new InsightsView(new WorkSessionRepository());
+
+        ScrollPane insightsScroll = new ScrollPane(insightsView);
+        insightsScroll.setFitToWidth(true);
+
+        Tab insightsTab = new Tab("Insights", insightsScroll);
+        insightsTab.setClosable(false);
+
+        insightsTab.setOnSelectionChanged(event -> {
+            if (insightsTab.isSelected()) {
+                insightsView.reload();
+            }
+        });
+
         TabPane leftTabs = new TabPane(
-                taskTab, scheduleTab, categoryTab);
+                taskTab, scheduleTab, categoryTab, insightsTab);
 
         scheduleRequest = (requestedTask, requestedStep) -> {
 
@@ -878,6 +1001,13 @@ public class App extends Application {
                 }
 
                 scheduleDateInput.setValue(targetDate);
+
+                if (targetDate.equals(LocalDate.now())) {
+                    startTimeInput.setText(
+                            LocalTime.now()
+                                    .truncatedTo(ChronoUnit.MINUTES)
+                                    .toString());
+                }
 
                 blockTypeInput.setValue(TimeBlock.Type.TASK);
 
@@ -941,12 +1071,11 @@ public class App extends Application {
         scene.getStylesheets().add(
                 getClass().getResource("/styles/light.css").toExternalForm());
 
-        stage.setTitle("Personal Agenda");
+        stage.setTitle("Day 8 · 星期八");
         AppIcons.apply(stage);
         stage.setScene(scene);
-        stage.getIcons().add(
-                new Image(getClass().getResourceAsStream(
-                        "/icons/agenda-icon.png")));
+
+        FocusSessionService focusService = new FocusSessionService(new WorkSessionRepository());
 
         FloatingWidget floatingWidget = new FloatingWidget(
                 stage,
@@ -968,13 +1097,136 @@ public class App extends Application {
                     } catch (SQLException ex) {
                         ex.printStackTrace();
                     }
-                });
+                },
+                focusService);
+
+        focusRequest = (requestedTask, requestedStep) -> {
+            try {
+                // Do not replace an existing running or paused session.
+                if (focusService.state() != FocusSessionService.State.IDLE) {
+                    floatingWidget.show();
+                    return;
+                }
+
+                // An unfinished database session must be recovered first.
+                WorkSessionRepository sessionRepository = new WorkSessionRepository();
+
+                if (sessionRepository.findActive().isPresent()) {
+                    floatingWidget.show();
+                    return;
+                }
+
+                // Fetch the latest task rather than trusting an old UI object.
+                Task selectedTask = repository.findAll().stream()
+                        .filter(t -> t.getId().equals(requestedTask.getId()))
+                        .findFirst()
+                        .orElse(null);
+
+                if (selectedTask == null) {
+                    showFocusMessage(stage, "Task no longer exists.");
+                    return;
+                }
+
+                TaskStep selectedStep = null;
+
+                if (requestedStep != null) {
+                    selectedStep = taskStepRepository
+                            .findByTaskId(selectedTask.getId())
+                            .stream()
+                            .filter(s -> s.id().equals(requestedStep.id()))
+                            .findFirst()
+                            .orElse(null);
+
+                    if (selectedStep == null) {
+                        showFocusMessage(stage, "Step no longer exists.");
+                        return;
+                    }
+                }
+
+                focusService.start(selectedTask, selectedStep);
+                floatingWidget.show();
+
+            } catch (SQLException | IllegalArgumentException
+                    | IllegalStateException ex) {
+
+                showFocusMessage(stage,
+                        "Unable to start Focus: " + ex.getMessage());
+            }
+        };
 
         Button openWidgetButton = new Button("Open Mini Widget");
+
         openWidgetButton.setOnAction(
                 event -> floatingWidget.show());
 
-        timeline.getChildren().add(0, openWidgetButton);
+        MenuButton windowMenu = new MenuButton("Window");
+
+        MenuItem miniOnlyItem = new MenuItem("Hide Main · Keep Mini");
+
+        MenuItem exitItem = new MenuItem("Exit Agenda");
+
+        windowMenu.getItems().addAll(
+                miniOnlyItem,
+                exitItem);
+
+        MenuItem dataLocationItem = new MenuItem("Data Location...");
+
+        windowMenu.getItems().add(0, dataLocationItem);
+
+        dataLocationItem.setOnAction(event -> {
+
+            if (focusService.state() != FocusSessionService.State.IDLE) {
+
+                showFocusMessage(
+                        stage,
+                        "Stop the current Focus Session "
+                                + "before changing the data location.");
+                return;
+            }
+
+            try {
+                if (new WorkSessionRepository()
+                        .findActive().isPresent()) {
+
+                    showFocusMessage(
+                            stage,
+                            "Resolve the unfinished work session first.");
+                    return;
+                }
+
+                DataLocationDialog.show(stage);
+
+            } catch (SQLException ex) {
+                showFocusMessage(stage, ex.getMessage());
+            }
+        });
+
+        // Enter Mini-only mode.
+        miniOnlyItem.setOnAction(event -> floatingWidget.showMiniOnly());
+
+        // Request an application exit using the existing
+        // main-window close confirmation.
+        exitItem.setOnAction(event -> {
+
+            WindowEvent closeRequest = new WindowEvent(
+                    stage,
+                    WindowEvent.WINDOW_CLOSE_REQUEST);
+
+            Event.fireEvent(stage, closeRequest);
+
+            if (!closeRequest.isConsumed()) {
+                stage.hide();
+            }
+        });
+
+        HBox windowControls = new HBox(
+                8,
+                openWidgetButton,
+                windowMenu);
+
+        windowControls.setAlignment(Pos.CENTER_LEFT);
+
+        timeline.getChildren().add(0, windowControls);
 
         stage.show();
     }
@@ -1331,6 +1583,14 @@ public class App extends Application {
 
         Button scheduleTaskButton = new Button("Schedule");
 
+        Button startTaskFocusButton = new Button("Focus");
+
+        startTaskFocusButton.setOnAction(event -> {
+            if (focusRequest != null) {
+                focusRequest.accept(task, null);
+            }
+        });
+
         scheduleTaskButton.setOnAction(event -> {
             if (scheduleRequest != null) {
                 scheduleRequest.accept(task, null);
@@ -1435,6 +1695,7 @@ public class App extends Application {
         // Reusable right-aligned action row.
         HBox taskActions = UiLayout.rightActions(
                 scheduleTaskButton,
+                startTaskFocusButton,
                 editTaskButton,
                 deleteButton);
 
@@ -1486,6 +1747,11 @@ public class App extends Application {
                 step -> {
                     if (scheduleRequest != null) {
                         scheduleRequest.accept(task, step);
+                    }
+                },
+                step -> {
+                    if (focusRequest != null) {
+                        focusRequest.accept(task, step);
                     }
                 });
 
@@ -1697,5 +1963,18 @@ public class App extends Application {
 
     public static void main(String[] args) {
         launch(args);
+    }
+
+    private void showFocusMessage(Stage owner, String message) {
+
+        javafx.scene.control.Alert alert = new javafx.scene.control.Alert(
+                javafx.scene.control.Alert.AlertType.INFORMATION);
+
+        alert.initOwner(owner);
+        alert.setTitle("Focus");
+        alert.setHeaderText(null);
+        alert.setContentText(message);
+
+        alert.showAndWait();
     }
 }
