@@ -19,6 +19,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -134,7 +135,10 @@ public class FloatingWidget {
         private final Timeline dataClock = new Timeline(
                         new KeyFrame(javafx.util.Duration.seconds(30), e -> refresh()));
         private final Timeline sessionTicker = new Timeline(
-                        new KeyFrame(javafx.util.Duration.seconds(1), e -> updateSessionTimer()));
+                        new KeyFrame(javafx.util.Duration.seconds(1), e -> {
+                                updateSessionTimer();
+                                updateMiniClock();
+                        }));
 
         private final TabPane tabs;
         private final VBox root;
@@ -538,6 +542,7 @@ public class FloatingWidget {
                         window.toFront();
                 }
                 updateSessionTimer();
+                updateMiniClock();
         }
 
         public void showMiniOnly() {
@@ -610,9 +615,6 @@ public class FloatingWidget {
 
                         nextLabel.setText(next == null ? "Next: No upcoming activity"
                                         : "Next: " + next.title() + " · " + next.start().toLocalTime());
-
-                        clockFace.setTime(now.toLocalTime());
-                        clockTimeLabel.setText(String.format("%02d:%02d", now.getHour(), now.getMinute()));
 
                         String selectedProjectId = clockProjectChoice.getValue() == null
                                         ? null
@@ -1059,6 +1061,15 @@ public class FloatingWidget {
 
                 updateSessionTimer();
                 updateScheduleFocusStatus();
+        }
+
+        private void updateMiniClock() {
+                LocalTime now = LocalTime.now();
+
+                clockFace.setTime(now);
+                clockTimeLabel.setText(
+                                String.format("%02d:%02d",
+                                                now.getHour(), now.getMinute()));
         }
 
         private void updateSessionTimer() {

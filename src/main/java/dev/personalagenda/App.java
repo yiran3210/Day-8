@@ -30,6 +30,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
 
 import javafx.application.Application;
 import javafx.application.Platform;
@@ -324,8 +325,12 @@ public class App extends Application {
         TextField blockTitleInput = new TextField();
         blockTitleInput.setPromptText("Activity name");
 
-        TextField startTimeInput = new TextField("16:00");
-        TextField endTimeInput = new TextField("17:00");
+        LocalTime initialStart = LocalTime.now()
+                .truncatedTo(ChronoUnit.MINUTES);
+
+        TextField startTimeInput = new TextField(initialStart.toString());
+
+        TextField endTimeInput = new TextField(initialStart.plusHours(1).toString());
 
         startTimeInput.setPrefColumnCount(5);
         endTimeInput.setPrefColumnCount(5);
@@ -975,6 +980,13 @@ public class App extends Application {
                 }
 
                 scheduleDateInput.setValue(targetDate);
+
+                if (targetDate.equals(LocalDate.now())) {
+                    startTimeInput.setText(
+                            LocalTime.now()
+                                    .truncatedTo(ChronoUnit.MINUTES)
+                                    .toString());
+                }
 
                 blockTypeInput.setValue(TimeBlock.Type.TASK);
 
