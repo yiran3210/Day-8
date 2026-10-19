@@ -6,21 +6,43 @@
 **Windows x64 · Java 25 · JavaFX · SQLite · Local-first**  
 **Version / 版本：** `v0.2.0` · Portable
 
-Day 8 is a small desktop planner connecting **what you plan**, **what you actually spend time on**, and **what you finish**. They aren't necessarily the same thing.
+Day 8 is a local-first planner for **planning work, handling unfinished tasks, and tracking what actually gets done**. Because planning two hours, working two hours, and finishing the task are three different things.
 
-星期八是一款本地桌面时间管理工具，把**计划安排、实际投入与任务完成情况**分开记录，再联系起来。毕竟，排了两小时 ≠ 工作了两小时 ≠ 完成了任务。
+星期八是一款本地桌面时间管理工具：**安排任务、妥善处理未完成事项、记录真实投入**。毕竟，排了两小时 ≠ 工作了两小时 ≠ 完成了任务。
 
 ## ✨ What it does / 主要功能
 
 | Feature | 功能 |
 | --- | --- |
-| **Tasks & Steps** — Checklists, estimated durations, categories | **任务与步骤**：清单、预计时长、分类 |
+| **Task views & backlog** — Today, Tomorrow, Replan, Backlog; unfinished work stays visible | **任务视图与待规划池**：今日、明日、重新规划、Backlog；未完成任务不会消失 |
+| **Tasks & Steps** — Checklists, estimated durations, colour-coded categories | **任务与步骤**：清单、预计时长、自定义颜色分类 |
 | **Day Plan** — 24-hour timeline with linked tasks, steps, and fixed events | **日程规划**：24 小时时间轴，关联任务、步骤与固定活动 |
 | **Projects** — Organise work and follow weighted progress | **项目管理**：归类任务，跟踪加权完成进度 |
 | **Focus Sessions** — Start, pause, resume, and stop real work tracking | **专注记录**：开始、暂停、恢复及结束，记录实际投入 |
 | **Mini Widget** — Compact clock and Focus controls | **迷你窗口**：时钟与专注控制，可独立于主窗口显示 |
 | **Insights** — Work hours and observed completion trends, day/week/month/year | **统计趋势**：工作时长与历史完成率，支持日／周／月／年 |
 | **SQLite** — Local storage, with no sign-in or cloud dependency | **本地数据**：SQLite 持久保存，无须账号或云端服务 |
+
+## 🗂️ A place for unfinished plans / 给未完成的计划留一个位置
+
+**No silent rollover. No disappearing to-dos.** Tasks belong to a date *only when you assign one*; missing a day does not silently change the plan.
+
+**不自动顺延，也不让待办凭空消失。** 任务只有指定了计划日期才属于某一天；到了第二天仍未完成，原日期不会被自动改写。
+
+| View / 视图 | Meaning / 含义 |
+| --- | --- |
+| **Today · 今天** | Scheduled for today / 计划在今天的任务 |
+| **Tomorrow · 明天** | Scheduled for tomorrow / 计划在明天的任务 |
+| **Replan · 待重新规划** | **Unfinished** tasks dated before today / **已过计划日期、仍未完成**的任务 |
+| **Backlog · 待规划池** | Tasks **without a planned date**—not necessarily overdue / **未指定日期**的任务，不等于逾期任务 |
+| **Earlier · 过去** | All tasks dated before today, including completed ones / 过去日期的任务，包含已完成的 |
+| **All · 全部** | Every task / 所有任务 |
+
+**Missed yesterday's task? / 昨天的任务没做完？** It appears under **Replan**. Set a new date to reschedule it, or click **Backlog** beside the task to remove its date and decide later. **Backlog is an action button there, not a status badge.** Completed tasks leave Replan but remain in historical/all views.
+
+它会出现在 **Replan**；你可以手动改期，也可以点击任务旁的 **Backlog** 清除计划日期，先放入待规划池。注意这里的 **Backlog 是操作按钮，不是任务状态标签**。任务完成后不再属于 Replan，但依然可在历史／全部视图中查看。
+
+*The task **Category** (e.g. a colour-coded area of work) is separate from these date-based views.* / 任务的自定义 **Category（分类／颜色）** 与上述按日期筛选的视图互相独立。
 
 ## 🚀 Getting started / 如何使用
 
@@ -31,9 +53,9 @@ Day 8 is a small desktop planner connecting **what you plan**, **what you actual
 **Workflow / 建议操作：**
 
 1. Create a **Task**, optionally divide it into **Steps**. / 创建任务，按需拆分步骤。
-2. Put it on the **Day Plan** timeline. / 将任务或步骤安排到日程中。
+2. Give it a date or leave it in **Backlog**; schedule it in **Day Plan** when ready. / 选择日期，或暂存 Backlog；需要时再安排到 Day Plan。
 3. Press **Focus** in To-Do, Day Plan, or Mini Widget; pause when you stop working. / 从任务、日程或迷你窗口启动专注；中断时暂停。
-4. Check off finished steps and review **Insights**. / 勾选已完成步骤，在统计页复盘。
+4. Check off finished steps; use **Replan** for missed tasks and **Insights** to review progress. / 勾选完成的步骤，通过 Replan 处理遗漏任务，在 Insights 中复盘。
 
 ## 💾 Your data / 数据存储
 
