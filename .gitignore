@@ -22,3 +22,6 @@
 # System
 .DS_Store
 Thumbs.db
+
+# Downloaded and generated ZIP archives in project root
+/*.zip
