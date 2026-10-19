@@ -1579,7 +1579,7 @@ public class App extends Application {
         DatePicker taskDateInput = new DatePicker(task.getPlannedDate());
         taskDateInput.setPrefWidth(150);
 
-        Button clearDateButton = new Button("Backlog");
+        Button clearDateButton = new Button("→ Backlog");
 
         Button scheduleTaskButton = new Button("Schedule");
 
