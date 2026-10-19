@@ -8,9 +8,12 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.ResultSet;
+import java.util.prefs.Preferences;
+import java.util.prefs.BackingStoreException;
 
 public class Database {
 
+    private static final String DATA_DIR_PREF_KEY = "data.directory";
     private static final Path DB_PATH = resolveDatabasePath();
 
     private static Path resolveDatabasePath() {
@@ -20,6 +23,16 @@ public class Database {
 
         if (configured == null || configured.isBlank()) {
             configured = System.getenv("AGENDA_DATA_DIR");
+        }
+
+        String saved = Preferences.userNodeForPackage(Database.class)
+                .get(DATA_DIR_PREF_KEY, null);
+
+        if (saved != null && !saved.isBlank()) {
+            return Path.of(saved)
+                    .toAbsolutePath()
+                    .normalize()
+                    .resolve("agenda.db");
         }
 
         if (configured != null && !configured.isBlank()) {
@@ -57,6 +70,78 @@ public class Database {
 
     public static Connection connect() throws SQLException {
         return DriverManager.getConnection("jdbc:sqlite:" + DB_PATH);
+    }
+
+    public static Path databasePath() {
+        return DB_PATH;
+    }
+
+    public static boolean hasExternalDataOverride() {
+        String property = System.getProperty("agenda.data.dir");
+        String environment = System.getenv("AGENDA_DATA_DIR");
+
+        return (property != null && !property.isBlank())
+                || (environment != null && !environment.isBlank());
+    }
+
+    public static void setDataDirectoryForNextLaunch(Path directory)
+            throws IOException, SQLException, BackingStoreException {
+
+        if (hasExternalDataOverride()) {
+            throw new IOException(
+                    "Data path is controlled by a JVM property "
+                            + "or environment variable.");
+        }
+
+        Path selected = directory.toAbsolutePath().normalize();
+
+        if (!Files.isDirectory(selected)
+                || !Files.isWritable(selected)) {
+            throw new IOException(
+                    "Selected directory is missing or not writable.");
+        }
+
+        Path candidate = selected.resolve("agenda.db");
+
+        if (Files.exists(candidate)) {
+
+            if (!Files.isRegularFile(candidate)) {
+                throw new IOException(
+                        "agenda.db exists but is not a regular file.");
+            }
+
+            // Validate an existing SQLite database before saving.
+            try (Connection conn = DriverManager.getConnection(
+                    "jdbc:sqlite:" + candidate);
+                    Statement statement = conn.createStatement()) {
+
+                try (ResultSet rs = statement.executeQuery(
+                        "PRAGMA quick_check")) {
+
+                    if (!rs.next()
+                            || !"ok".equalsIgnoreCase(rs.getString(1))) {
+                        throw new SQLException(
+                                "SQLite integrity check failed.");
+                    }
+                }
+
+                try (ResultSet rs = statement.executeQuery("""
+                        SELECT 1 FROM sqlite_master
+                        WHERE type = 'table' AND name = 'tasks'
+                        """)) {
+
+                    if (!rs.next()) {
+                        throw new SQLException(
+                                "Selected database is not a Day 8 database.");
+                    }
+                }
+            }
+        }
+
+        Preferences prefs = Preferences.userNodeForPackage(Database.class);
+
+        prefs.put(DATA_DIR_PREF_KEY, selected.toString());
+        prefs.flush();
     }
 
     public static void initialize() throws SQLException, IOException {

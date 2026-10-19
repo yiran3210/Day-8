@@ -16,6 +16,7 @@ import dev.personalagenda.view.FloatingWidget;
 import dev.personalagenda.view.AppIcons;
 import dev.personalagenda.view.UiLayout;
 import dev.personalagenda.view.InsightsView;
+import dev.personalagenda.view.DataLocationDialog;
 import dev.personalagenda.service.FocusSessionService;
 
 // import java.util.ArrayList;
@@ -1167,6 +1168,38 @@ public class App extends Application {
         windowMenu.getItems().addAll(
                 miniOnlyItem,
                 exitItem);
+
+        MenuItem dataLocationItem = new MenuItem("Data Location...");
+
+        windowMenu.getItems().add(0, dataLocationItem);
+
+        dataLocationItem.setOnAction(event -> {
+
+            if (focusService.state() != FocusSessionService.State.IDLE) {
+
+                showFocusMessage(
+                        stage,
+                        "Stop the current Focus Session "
+                                + "before changing the data location.");
+                return;
+            }
+
+            try {
+                if (new WorkSessionRepository()
+                        .findActive().isPresent()) {
+
+                    showFocusMessage(
+                            stage,
+                            "Resolve the unfinished work session first.");
+                    return;
+                }
+
+                DataLocationDialog.show(stage);
+
+            } catch (SQLException ex) {
+                showFocusMessage(stage, ex.getMessage());
+            }
+        });
 
         // Enter Mini-only mode.
         miniOnlyItem.setOnAction(event -> floatingWidget.showMiniOnly());
