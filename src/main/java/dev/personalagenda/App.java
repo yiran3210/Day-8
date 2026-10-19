@@ -77,6 +77,7 @@ public class App extends Application {
     private final Label dailyProgressDetails = new Label();
 
     private BiConsumer<Task, TaskStep> scheduleRequest;
+    private BiConsumer<Task, TaskStep> focusRequest;
 
     @Override
     public void start(Stage stage) throws Exception {
@@ -240,6 +241,83 @@ public class App extends Application {
                 scheduleHeaderSpacer, Priority.ALWAYS);
 
         scheduleHeader.setAlignment(Pos.CENTER_LEFT);
+
+        Button startCurrentButton = new Button("Start Current");
+
+        startCurrentButton.setMinWidth(Region.USE_PREF_SIZE);
+
+        // Insert between the spacer and date picker.
+        scheduleHeader.getChildren().add(2, startCurrentButton);
+
+        startCurrentButton.setOnAction(event -> {
+            try {
+                LocalDateTime now = LocalDateTime.now();
+
+                List<TimeBlock> currentBlocks = blockRepository
+                        .findForDate(now.toLocalDate())
+                        .stream()
+                        .filter(block -> !now.isBefore(block.start())
+                                && now.isBefore(block.end()))
+                        .toList();
+
+                if (currentBlocks.size() != 1) {
+                    showFocusMessage(
+                            stage,
+                            currentBlocks.isEmpty()
+                                    ? "No activity is currently scheduled."
+                                    : "Multiple activities overlap. "
+                                            + "Please choose a Task in To-Do.");
+                    return;
+                }
+
+                TimeBlock current = currentBlocks.get(0);
+
+                if (current.type() != TimeBlock.Type.TASK
+                        || current.taskId() == null) {
+
+                    showFocusMessage(
+                            stage,
+                            "Current activity is not linked to a Task.");
+                    return;
+                }
+
+                Task task = repository.findAll().stream()
+                        .filter(t -> t.getId().equals(current.taskId()))
+                        .findFirst()
+                        .orElse(null);
+
+                if (task == null) {
+                    showFocusMessage(stage, "Linked Task no longer exists.");
+                    return;
+                }
+
+                TaskStep step = null;
+
+                if (current.stepId() != null) {
+                    step = taskStepRepository
+                            .findByTaskId(task.getId())
+                            .stream()
+                            .filter(s -> s.id().equals(current.stepId()))
+                            .findFirst()
+                            .orElse(null);
+
+                    if (step == null) {
+                        showFocusMessage(stage, "Linked Step no longer exists.");
+                        return;
+                    }
+                }
+
+                if (focusRequest != null) {
+                    focusRequest.accept(task, step);
+                }
+
+            } catch (SQLException ex) {
+                showFocusMessage(
+                        stage,
+                        "Unable to load current activity: " + ex.getMessage());
+            }
+        });
+
         scheduleDateInput.setMinWidth(Region.USE_PREF_SIZE);
 
         TextField blockTitleInput = new TextField();
@@ -988,6 +1066,60 @@ public class App extends Application {
                 },
                 focusService);
 
+        focusRequest = (requestedTask, requestedStep) -> {
+            try {
+                // Do not replace an existing running or paused session.
+                if (focusService.state() != FocusSessionService.State.IDLE) {
+                    floatingWidget.show();
+                    return;
+                }
+
+                // An unfinished database session must be recovered first.
+                WorkSessionRepository sessionRepository = new WorkSessionRepository();
+
+                if (sessionRepository.findActive().isPresent()) {
+                    floatingWidget.show();
+                    return;
+                }
+
+                // Fetch the latest task rather than trusting an old UI object.
+                Task selectedTask = repository.findAll().stream()
+                        .filter(t -> t.getId().equals(requestedTask.getId()))
+                        .findFirst()
+                        .orElse(null);
+
+                if (selectedTask == null) {
+                    showFocusMessage(stage, "Task no longer exists.");
+                    return;
+                }
+
+                TaskStep selectedStep = null;
+
+                if (requestedStep != null) {
+                    selectedStep = taskStepRepository
+                            .findByTaskId(selectedTask.getId())
+                            .stream()
+                            .filter(s -> s.id().equals(requestedStep.id()))
+                            .findFirst()
+                            .orElse(null);
+
+                    if (selectedStep == null) {
+                        showFocusMessage(stage, "Step no longer exists.");
+                        return;
+                    }
+                }
+
+                focusService.start(selectedTask, selectedStep);
+                floatingWidget.show();
+
+            } catch (SQLException | IllegalArgumentException
+                    | IllegalStateException ex) {
+
+                showFocusMessage(stage,
+                        "Unable to start Focus: " + ex.getMessage());
+            }
+        };
+
         Button openWidgetButton = new Button("Open Mini Widget");
         openWidgetButton.setOnAction(
                 event -> floatingWidget.show());
@@ -1349,6 +1481,14 @@ public class App extends Application {
 
         Button scheduleTaskButton = new Button("Schedule");
 
+        Button startTaskFocusButton = new Button("Focus");
+
+        startTaskFocusButton.setOnAction(event -> {
+            if (focusRequest != null) {
+                focusRequest.accept(task, null);
+            }
+        });
+
         scheduleTaskButton.setOnAction(event -> {
             if (scheduleRequest != null) {
                 scheduleRequest.accept(task, null);
@@ -1453,6 +1593,7 @@ public class App extends Application {
         // Reusable right-aligned action row.
         HBox taskActions = UiLayout.rightActions(
                 scheduleTaskButton,
+                startTaskFocusButton,
                 editTaskButton,
                 deleteButton);
 
@@ -1504,6 +1645,11 @@ public class App extends Application {
                 step -> {
                     if (scheduleRequest != null) {
                         scheduleRequest.accept(task, step);
+                    }
+                },
+                step -> {
+                    if (focusRequest != null) {
+                        focusRequest.accept(task, step);
                     }
                 });
 
@@ -1715,5 +1861,18 @@ public class App extends Application {
 
     public static void main(String[] args) {
         launch(args);
+    }
+
+    private void showFocusMessage(Stage owner, String message) {
+
+        javafx.scene.control.Alert alert = new javafx.scene.control.Alert(
+                javafx.scene.control.Alert.AlertType.INFORMATION);
+
+        alert.initOwner(owner);
+        alert.setTitle("Focus");
+        alert.setHeaderText(null);
+        alert.setContentText(message);
+
+        alert.showAndWait();
     }
 }
