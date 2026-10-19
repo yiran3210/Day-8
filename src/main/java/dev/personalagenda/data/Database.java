@@ -145,6 +145,129 @@ public class Database {
                     ON task_project_links(project_id)
                     """);
 
+            statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS work_sessions (
+                        id TEXT PRIMARY KEY,
+                        task_id TEXT,
+                        step_id TEXT,
+                        task_title TEXT,
+                        step_title TEXT,
+                        started_at_ms INTEGER NOT NULL,
+                        ended_at_ms INTEGER,
+                        CHECK (
+                            ended_at_ms IS NULL
+                            OR ended_at_ms >= started_at_ms
+                        )
+                    )
+                    """);
+
+            statement.executeUpdate("""
+                    CREATE INDEX IF NOT EXISTS idx_work_sessions_start
+                    ON work_sessions(started_at_ms)
+                    """);
+
+            statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS completion_observations (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        observed_at_ms INTEGER NOT NULL,
+                        local_date TEXT NOT NULL,
+                        planned_minutes INTEGER NOT NULL,
+                        completed_minutes INTEGER NOT NULL
+                    )
+                    """);
+
+            statement.executeUpdate("""
+                    CREATE INDEX IF NOT EXISTS idx_completion_date
+                    ON completion_observations(local_date, id)
+                    """);
+
+            statement.executeUpdate("""
+                    CREATE VIEW IF NOT EXISTS daily_completion_live AS
+                    WITH task_totals AS (
+                        SELECT
+                            t.estimated_minutes AS task_estimate,
+                            t.completed AS parent_completed,
+
+                            COALESCE((
+                                SELECT SUM(s.estimated_minutes)
+                                FROM task_steps s
+                                WHERE s.task_id = t.id
+                            ), 0) AS step_total,
+
+                            COALESCE((
+                                SELECT SUM(s.estimated_minutes)
+                                FROM task_steps s
+                                WHERE s.task_id = t.id
+                                  AND s.completed = 1
+                            ), 0) AS step_done
+
+                        FROM tasks t
+                        WHERE t.planned_date = date('now', 'localtime')
+                    )
+                    SELECT
+                        COALESCE(SUM(
+                            MAX(task_estimate, step_total)
+                        ), 0) AS planned_minutes,
+
+                        COALESCE(SUM(
+                            CASE
+                                WHEN step_total = 0 THEN
+                                    CASE WHEN parent_completed = 1
+                                         THEN task_estimate ELSE 0 END
+                                ELSE
+                                    MIN(step_done,
+                                        MAX(task_estimate, step_total))
+                            END
+                        ), 0) AS completed_minutes
+                    FROM task_totals
+                    """);
+
+            String recordObservation = """
+                    INSERT INTO completion_observations
+                    (observed_at_ms, local_date,
+                     planned_minutes, completed_minutes)
+
+                    SELECT
+                        CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+                        date('now', 'localtime'),
+                        v.planned_minutes,
+                        v.completed_minutes
+
+                    FROM daily_completion_live v
+
+                    WHERE NOT EXISTS (
+                        SELECT 1
+                        FROM completion_observations o
+                        WHERE o.id = (
+                            SELECT MAX(id)
+                            FROM completion_observations
+                            WHERE local_date = date('now', 'localtime')
+                        )
+                          AND o.planned_minutes = v.planned_minutes
+                          AND o.completed_minutes = v.completed_minutes
+                    )
+                    """;
+
+            for (String table : new String[] { "tasks", "task_steps" }) {
+                for (String operation : new String[] {
+                        "INSERT", "UPDATE", "DELETE" }) {
+
+                    String triggerName = "trg_completion_" + table + "_"
+                            + operation.toLowerCase(java.util.Locale.ROOT);
+
+                    statement.executeUpdate(
+                            "CREATE TRIGGER IF NOT EXISTS " + triggerName
+                                    + " AFTER " + operation
+                                    + " ON " + table
+                                    + " BEGIN "
+                                    + recordObservation
+                                    + "; END");
+                }
+            }
+
+            // Capture the baseline of the current day.
+            statement.executeUpdate(recordObservation);
+
         }
 
         System.out.println("Database initialized: " + DB_PATH);
