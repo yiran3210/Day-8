@@ -164,8 +164,9 @@ public class ProjectDashboard extends VBox {
                                                         .mapToInt(TaskStep::estimatedMinutes)
                                                         .sum();
 
-                                        int planned = Math.max(
-                                                        task.getEstimatedMinutes(), allocated);
+                                        int planned = taskSteps.isEmpty()
+                                                        ? task.getEstimatedMinutes()
+                                                        : allocated;
 
                                         int done = taskSteps.isEmpty()
                                                         ? (task.isCompleted() ? planned : 0)

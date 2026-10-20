@@ -132,15 +132,21 @@ public class TaskStepsView extends VBox {
                     .mapToInt(TaskStep::estimatedMinutes)
                     .sum();
 
-            int total = Math.max(
-                    task.getEstimatedMinutes(), allocated);
-
             boolean hasSteps = !steps.isEmpty();
+
+            int total = hasSteps
+                    ? allocated
+                    : task.getEstimatedMinutes();
+
+            int bufferMinutes = hasSteps
+                    ? Math.max(0, task.getEstimatedMinutes() - allocated)
+                    : 0;
 
             // Steps determine the parent task's status
             if (hasSteps) {
 
-                boolean completed = completedMinutes >= total;
+                boolean completed = steps.stream()
+                        .allMatch(TaskStep::completed);
 
                 if (task.isCompleted() != completed) {
                     taskRepository.updateCompleted(
@@ -161,8 +167,11 @@ public class TaskStepsView extends VBox {
             if (hasSteps) {
                 summary.setText(
                         Math.round(progress * 100) + "%"
-                                + " · " + completedMinutes
-                                + "/" + total + " min");
+                                + " · Steps " + completedMinutes
+                                + "/" + total + " min"
+                                + (bufferMinutes > 0
+                                        ? " · Buffer " + bufferMinutes + " min"
+                                        : ""));
             } else {
                 summary.setText(
                         task.isCompleted()
