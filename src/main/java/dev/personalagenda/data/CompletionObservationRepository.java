@@ -15,11 +15,29 @@ public class CompletionObservationRepository {
             LocalDate endExclusive) throws SQLException {
 
         String sql = """
-                SELECT *
-                FROM completion_observations
-                WHERE local_date >= ?
-                  AND local_date < ?
-                ORDER BY local_date, id
+                SELECT local_date, observed_at_ms,
+                       planned_minutes, completed_minutes
+                FROM (
+                    SELECT id, local_date, observed_at_ms,
+                           planned_minutes, completed_minutes
+                    FROM completion_observations_v2
+                    WHERE local_date >= ?
+                      AND local_date < ?
+
+                    UNION ALL
+
+                    SELECT o.id, o.local_date, o.observed_at_ms,
+                           o.planned_minutes, o.completed_minutes
+                    FROM completion_observations o
+                    WHERE o.local_date >= ?
+                      AND o.local_date < ?
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM completion_observations_v2 v
+                          WHERE v.local_date = o.local_date
+                      )
+                )
+                ORDER BY local_date, observed_at_ms, id
                 """;
 
         List<CompletionObservation> result = new ArrayList<>();
@@ -29,6 +47,8 @@ public class CompletionObservationRepository {
 
             stmt.setString(1, startInclusive.toString());
             stmt.setString(2, endExclusive.toString());
+            stmt.setString(3, startInclusive.toString());
+            stmt.setString(4, endExclusive.toString());
 
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {

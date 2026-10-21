@@ -6,6 +6,7 @@ import dev.personalagenda.data.TaskRepository;
 import dev.personalagenda.data.TaskStepRepository;
 import dev.personalagenda.data.TimeBlockRepository;
 import dev.personalagenda.data.WorkSessionRepository;
+import dev.personalagenda.data.DailyPlanRepository;
 import dev.personalagenda.model.Project;
 import dev.personalagenda.model.Task;
 import dev.personalagenda.model.TaskStep;
@@ -69,6 +70,7 @@ public class FloatingWidget {
         private final FocusSessionService focusService;
 
         private final TaskRepository tasks = new TaskRepository();
+        private final DailyPlanRepository dailyPlans = new DailyPlanRepository();
         private final TaskStepRepository steps = new TaskStepRepository();
         private final TimeBlockRepository blocks = new TimeBlockRepository();
         private final ProjectRepository projects = new ProjectRepository();
@@ -577,6 +579,12 @@ public class FloatingWidget {
                 }
         }
 
+        public void refreshFromDatabase() {
+                if (window.isShowing()) {
+                        refresh();
+                }
+        }
+
         private void refresh() {
                 try {
                         LocalDateTime now = LocalDateTime.now();
@@ -584,23 +592,11 @@ public class FloatingWidget {
                         List<Task> allTasks = tasks.findAll();
 
                         // Today's estimated completed workload.
-                        int planned = 0;
-                        int done = 0;
-                        for (Task task : allTasks) {
-                                if (!today.equals(task.getPlannedDate()))
-                                        continue;
-                                List<TaskStep> taskSteps = steps.findByTaskId(task.getId());
-                                int allocated = taskSteps.stream().mapToInt(TaskStep::estimatedMinutes).sum();
-                                int taskPlanned = taskSteps.isEmpty()
-                                                ? task.getEstimatedMinutes()
-                                                : allocated;
-                                int taskDone = taskSteps.isEmpty()
-                                                ? (task.isCompleted() ? taskPlanned : 0)
-                                                : taskSteps.stream().filter(TaskStep::completed)
-                                                                .mapToInt(TaskStep::estimatedMinutes).sum();
-                                planned += taskPlanned;
-                                done += Math.min(taskDone, taskPlanned);
-                        }
+                        DailyPlanRepository.DailySummary summary = dailyPlans.findByDate(today);
+
+                        int planned = summary.plannedMinutes();
+                        int done = summary.completedMinutes();
+
                         dailyBar.setValues(planned == 0 ? 0 : done / (double) planned, 0);
                         dailyLabel.setText(done + " / " + planned + " min completed");
 

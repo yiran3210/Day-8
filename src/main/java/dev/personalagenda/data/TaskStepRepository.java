@@ -22,19 +22,68 @@ public class TaskStepRepository {
                 VALUES (?, ?, ?, ?, ?, ?)
                 """;
 
-        try (Connection conn = Database.connect();
-                PreparedStatement stmt = conn.prepareStatement(sql)) {
+        try (Connection conn = Database.connect()) {
+            conn.setAutoCommit(false);
 
-            stmt.setString(1, step.id());
-            stmt.setString(2, step.taskId());
-            stmt.setString(3, step.title());
-            stmt.setInt(4, step.estimatedMinutes());
-            stmt.setInt(5, step.completed() ? 1 : 0);
-            stmt.setString(6,
-                    step.completedAt() == null
-                            ? null
-                            : step.completedAt().toString());
+            try {
+                // 1. Insert the Step
+                try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                    stmt.setString(1, step.id());
+                    stmt.setString(2, step.taskId());
+                    stmt.setString(3, step.title());
+                    stmt.setInt(4, step.estimatedMinutes());
+                    stmt.setInt(5, step.completed() ? 1 : 0);
+                    stmt.setString(6,
+                            step.completedAt() == null
+                                    ? null
+                                    : step.completedAt().toString());
 
+                    stmt.executeUpdate();
+                }
+
+                // 2. Record today's Step commitment
+                captureStepInTodayPlan(conn, step.id());
+
+                conn.commit();
+
+            } catch (SQLException ex) {
+                conn.rollback();
+                throw ex;
+            }
+        }
+    }
+
+    private void captureStepInTodayPlan(
+            Connection conn, String stepId) throws SQLException {
+
+        String sql = """
+                INSERT OR IGNORE INTO daily_plan_items (
+                    local_date, item_key, task_id, step_id,
+                    task_title, step_title, category_name,
+                    planned_minutes, completed,
+                    recorded_at_ms, completed_at_ms
+                )
+                SELECT
+                    date('now', 'localtime'),
+                    'STEP:' || s.id,
+                    t.id,
+                    s.id,
+                    t.title,
+                    s.title,
+                    COALESCE(c.category_name, 'General'),
+                    s.estimated_minutes,
+                    s.completed,
+                    CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+                    NULL
+                FROM task_steps s
+                JOIN tasks t ON t.id = s.task_id
+                LEFT JOIN task_category_links c ON c.task_id = t.id
+                WHERE s.id = ?
+                  AND t.planned_date = date('now', 'localtime')
+                """;
+
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, stepId);
             stmt.executeUpdate();
         }
     }

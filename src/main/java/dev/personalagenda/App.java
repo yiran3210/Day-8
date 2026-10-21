@@ -9,7 +9,9 @@ import dev.personalagenda.data.TaskStepRepository;
 import dev.personalagenda.data.TimeBlockRepository;
 import dev.personalagenda.data.CategoryRepository;
 import dev.personalagenda.data.WorkSessionRepository;
+import dev.personalagenda.data.DailyPlanRepository;
 import dev.personalagenda.view.TimelineView;
+import dev.personalagenda.view.CorrectPlanDialog;
 import dev.personalagenda.view.TaskStepsView;
 import dev.personalagenda.view.ProjectDashboard;
 import dev.personalagenda.view.FloatingWidget;
@@ -78,6 +80,7 @@ public class App extends Application {
     private final Map<String, String> categoryColors = new LinkedHashMap<>();
 
     private final TaskStepRepository taskStepRepository = new TaskStepRepository();
+    private final DailyPlanRepository dailyPlanRepository = new DailyPlanRepository();
 
     private final Label dailyProgressDetails = new Label();
 
@@ -168,9 +171,8 @@ public class App extends Application {
             newTask.setPlannedDate(plannedDateInput.getValue());
 
             try {
-                repository.insert(newTask);
-                categoryRepository.assign(
-                        newTask.getId(),
+                repository.insert(
+                        newTask,
                         taskCategoryInput.getValue());
             } catch (SQLException e) {
                 e.printStackTrace();
@@ -210,11 +212,14 @@ public class App extends Application {
         progressBar.setManaged(true);
         progressBar.getStyleClass().add("daily-progress");
 
+        Button correctPlanButton = new Button("Correct Plan…");
+
         VBox dailyProgressBox = new VBox(
                 8,
                 progressLabel,
                 progressBar,
-                dailyProgressDetails);
+                dailyProgressDetails,
+                correctPlanButton);
 
         dailyProgressBox.setFillWidth(true);
         dailyProgressBox.setMaxWidth(Double.MAX_VALUE);
@@ -1100,6 +1105,27 @@ public class App extends Application {
                 },
                 focusService);
 
+        correctPlanButton.setOnAction(event -> {
+            if (!CorrectPlanDialog.show(stage)) {
+                return;
+            }
+
+            // 1. Main Daily Progress
+            updateProgress(
+                    tasks,
+                    progressLabel,
+                    progressBar,
+                    viewFilter.getValue());
+
+            // 2. Mini Widget
+            floatingWidget.refreshFromDatabase();
+
+            // 3. Insights, when visible
+            if (insightsTab.isSelected()) {
+                insightsView.reload();
+            }
+        });
+
         focusRequest = (requestedTask, requestedStep) -> {
             try {
                 // Do not replace an existing running or paused session.
@@ -1899,7 +1925,7 @@ public class App extends Application {
                     .mapToInt(TaskStep::estimatedMinutes)
                     .sum();
 
-            return Math.max(task.getEstimatedMinutes(), allocated);
+            return allocated;
 
         } catch (SQLException ex) {
             ex.printStackTrace();
@@ -1917,32 +1943,27 @@ public class App extends Application {
 
     private void updateProgress(List<Task> tasks, Label progressLabel, ProgressBar progressBar, String filter) {
 
-        int completedTasks = 0;
-        int totalTasks = 0;
+        DailyPlanRepository.DailySummary summary;
 
-        int plannedMinutes = 0;
-        int completedMinutes = 0;
-        int remainingMinutes = 0;
+        try {
+            summary = dailyPlanRepository.findByDate(LocalDate.now());
+        } catch (SQLException ex) {
+            ex.printStackTrace();
 
-        for (Task task : tasks) {
-
-            if (!matchesFilter(task, "Today")) {
-                continue;
-            }
-
-            totalTasks++;
-
-            int taskPlanned = getTaskPlannedMinutes(task);
-            int taskCompleted = getTaskCompletedMinutes(task);
-
-            plannedMinutes += taskPlanned;
-            completedMinutes += taskCompleted;
-            remainingMinutes += Math.max(0, taskPlanned - taskCompleted);
-
-            if (isTaskActuallyCompleted(task)) {
-                completedTasks++;
-            }
+            progressLabel.setText("Today: unable to load progress");
+            dailyProgressDetails.setText("Database read error");
+            progressBar.setProgress(0);
+            return;
         }
+
+        int plannedMinutes = summary.plannedMinutes();
+        int completedMinutes = summary.completedMinutes();
+
+        int totalTasks = summary.totalTasks();
+        int completedTasks = summary.completedTasks();
+
+        int remainingMinutes = Math.max(
+                0, plannedMinutes - completedMinutes);
 
         double progress = plannedMinutes == 0
                 ? 0.0
