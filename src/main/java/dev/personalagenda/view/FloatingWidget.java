@@ -6,6 +6,7 @@ import dev.personalagenda.data.TaskRepository;
 import dev.personalagenda.data.TaskStepRepository;
 import dev.personalagenda.data.TimeBlockRepository;
 import dev.personalagenda.data.WorkSessionRepository;
+import dev.personalagenda.data.DailyPlanRepository;
 import dev.personalagenda.model.Project;
 import dev.personalagenda.model.Task;
 import dev.personalagenda.model.TaskStep;
@@ -69,6 +70,7 @@ public class FloatingWidget {
         private final FocusSessionService focusService;
 
         private final TaskRepository tasks = new TaskRepository();
+        private final DailyPlanRepository dailyPlans = new DailyPlanRepository();
         private final TaskStepRepository steps = new TaskStepRepository();
         private final TimeBlockRepository blocks = new TimeBlockRepository();
         private final ProjectRepository projects = new ProjectRepository();
@@ -577,6 +579,12 @@ public class FloatingWidget {
                 }
         }
 
+        public void refreshFromDatabase() {
+                if (window.isShowing()) {
+                        refresh();
+                }
+        }
+
         private void refresh() {
                 try {
                         LocalDateTime now = LocalDateTime.now();
@@ -584,21 +592,11 @@ public class FloatingWidget {
                         List<Task> allTasks = tasks.findAll();
 
                         // Today's estimated completed workload.
-                        int planned = 0;
-                        int done = 0;
-                        for (Task task : allTasks) {
-                                if (!today.equals(task.getPlannedDate()))
-                                        continue;
-                                List<TaskStep> taskSteps = steps.findByTaskId(task.getId());
-                                int allocated = taskSteps.stream().mapToInt(TaskStep::estimatedMinutes).sum();
-                                int taskPlanned = Math.max(task.getEstimatedMinutes(), allocated);
-                                int taskDone = taskSteps.isEmpty()
-                                                ? (task.isCompleted() ? taskPlanned : 0)
-                                                : taskSteps.stream().filter(TaskStep::completed)
-                                                                .mapToInt(TaskStep::estimatedMinutes).sum();
-                                planned += taskPlanned;
-                                done += Math.min(taskDone, taskPlanned);
-                        }
+                        DailyPlanRepository.DailySummary summary = dailyPlans.findByDate(today);
+
+                        int planned = summary.plannedMinutes();
+                        int done = summary.completedMinutes();
+
                         dailyBar.setValues(planned == 0 ? 0 : done / (double) planned, 0);
                         dailyLabel.setText(done + " / " + planned + " min completed");
 
@@ -903,7 +901,9 @@ public class FloatingWidget {
         private void showFocusedTask(Task linkedTask) throws SQLException {
                 List<TaskStep> taskSteps = steps.findByTaskId(linkedTask.getId());
                 int allocated = taskSteps.stream().mapToInt(TaskStep::estimatedMinutes).sum();
-                int total = Math.max(linkedTask.getEstimatedMinutes(), allocated);
+                int total = taskSteps.isEmpty()
+                                ? linkedTask.getEstimatedMinutes()
+                                : allocated;
                 int completed = taskSteps.isEmpty()
                                 ? (linkedTask.isCompleted() ? total : 0)
                                 : taskSteps.stream().filter(TaskStep::completed)
@@ -938,15 +938,11 @@ public class FloatingWidget {
                                         try {
                                                 steps.updateCompleted(step.id(), checkBox.isSelected());
                                                 List<TaskStep> updated = steps.findByTaskId(linkedTask.getId());
-                                                int updatedAllocated = updated.stream()
-                                                                .mapToInt(TaskStep::estimatedMinutes).sum();
-                                                int updatedCompleted = updated.stream()
-                                                                .filter(TaskStep::completed)
-                                                                .mapToInt(TaskStep::estimatedMinutes).sum();
-                                                int updatedTotal = Math.max(
-                                                                linkedTask.getEstimatedMinutes(), updatedAllocated);
-                                                tasks.updateCompleted(linkedTask.getId(),
-                                                                updatedCompleted >= updatedTotal);
+                                                boolean allStepsCompleted = updated.stream()
+                                                                .allMatch(TaskStep::completed);
+
+                                                tasks.updateCompleted(
+                                                                linkedTask.getId(), allStepsCompleted);
                                                 onDataChanged.run();
                                                 refresh();
                                         } catch (SQLException ex) {
@@ -983,7 +979,9 @@ public class FloatingWidget {
                                 continue;
                         List<TaskStep> taskSteps = steps.findByTaskId(task.getId());
                         int allocated = taskSteps.stream().mapToInt(TaskStep::estimatedMinutes).sum();
-                        int planned = Math.max(task.getEstimatedMinutes(), allocated);
+                        int planned = taskSteps.isEmpty()
+                                        ? task.getEstimatedMinutes()
+                                        : allocated;
                         int completed = taskSteps.isEmpty()
                                         ? (task.isCompleted() ? planned : 0)
                                         : taskSteps.stream().filter(TaskStep::completed)
