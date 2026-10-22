@@ -575,6 +575,19 @@ public class FloatingWidget {
                 Platform.runLater(resizeWidgetAction);
         }
 
+        public void refreshAfterExternalChange() {
+
+                // Do not open a hidden Mini Widget automatically.
+                if (!window.isShowing()) {
+                        return;
+                }
+
+                // Re-read Task, Step, Schedule and Project data.
+                // Existing Focus Session identity remains controlled
+                // by FocusSessionService.
+                refresh();
+        }
+
         public void show() {
                 refresh();
                 if (!window.isShowing()) {

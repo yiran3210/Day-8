@@ -95,6 +95,9 @@ public class App extends Application {
     private BiConsumer<Task, TaskStep> focusRequest;
     private FocusSessionService focusService;
 
+    private Runnable afterPlanningDataChanged = () -> {
+    };
+
     @Override
     public void start(Stage stage) throws Exception {
 
@@ -723,7 +726,7 @@ public class App extends Application {
 
                 blockRepository.insert(block);
 
-                refreshSchedule(blockRepository, timeline, scheduledBlocks, today);
+                afterPlanningDataChanged.run();
 
                 blockTitleInput.clear();
                 linkedTaskInput.setValue(null);
@@ -1234,6 +1237,35 @@ public class App extends Application {
                     }
                 },
                 focusService);
+
+        afterPlanningDataChanged = () -> {
+
+            LocalDate selectedDate = scheduleDateInput.getValue();
+
+            if (selectedDate != null) {
+
+                try {
+                    refreshSchedule(
+                            blockRepository,
+                            timeline,
+                            scheduledBlocks,
+                            selectedDate);
+
+                } catch (SQLException ex) {
+
+                    Alert alert = new Alert(Alert.AlertType.ERROR);
+                    alert.setTitle("Day 8 · Schedule");
+                    alert.setHeaderText(
+                            "Changes were saved, but Schedule refresh failed.");
+                    alert.setContentText(ex.getMessage());
+                    alert.show();
+
+                    ex.printStackTrace();
+                }
+            }
+
+            floatingWidget.refreshAfterExternalChange();
+        };
 
         correctPlanButton.setOnAction(event -> {
             if (!CorrectPlanDialog.show(stage)) {
@@ -1874,8 +1906,7 @@ public class App extends Application {
 
                     repository.update(updatedBlock);
 
-                    refreshSchedule(
-                            repository, timeline, blockList, date);
+                    afterPlanningDataChanged.run();
 
                 } catch (DateTimeParseException ex) {
                     editStatus.setText("Invalid time. Use HH:mm.");
@@ -1890,8 +1921,7 @@ public class App extends Application {
                 try {
                     repository.delete(block.id());
 
-                    refreshSchedule(
-                            repository, timeline, blockList, date);
+                    afterPlanningDataChanged.run();
 
                 } catch (SQLException ex) {
                     Alert alert = new Alert(Alert.AlertType.ERROR);
@@ -2058,6 +2088,8 @@ public class App extends Application {
                             progressLabel, progressBar,
                             repository, filter);
 
+                    afterPlanningDataChanged.run();
+
                 } catch (SQLException ex) {
                     ex.printStackTrace();
                 }
@@ -2164,6 +2196,7 @@ public class App extends Application {
                         Platform.runLater(() -> refreshTaskList(
                                 tasks, taskList, progressLabel,
                                 progressBar, repository, filter));
+                        afterPlanningDataChanged.run();
                     }
                 },
                 step -> {
@@ -2250,6 +2283,8 @@ public class App extends Application {
                 updateProgress(
                         tasks, progressLabel, progressBar, filter);
 
+                afterPlanningDataChanged.run();
+
                 taskEditor.setVisible(false);
                 taskEditor.setManaged(false);
 
@@ -2296,6 +2331,8 @@ public class App extends Application {
                 taskList.getChildren().remove(taskEntry);
 
                 updateProgress(tasks, progressLabel, progressBar, filter);
+
+                afterPlanningDataChanged.run();
             } catch (SQLException ex) {
                 Alert alert = new Alert(Alert.AlertType.ERROR);
                 alert.setHeaderText("Unable to delete Task");
