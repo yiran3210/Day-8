@@ -177,10 +177,33 @@ public class TaskStepRepository {
             try {
                 // Keep schedule history, remove Step reference
                 try (PreparedStatement stmt = conn.prepareStatement(
-                        "UPDATE time_blocks SET step_id = NULL WHERE step_id = ?")) {
+                        """
+                                UPDATE time_blocks
+                                SET task_id = NULL,
+                                    step_id = NULL
+                                WHERE step_id = ?
+                                """)) {
 
                     stmt.setString(1, id);
                     stmt.executeUpdate();
+                }
+
+                try (PreparedStatement check = conn.prepareStatement("""
+                        SELECT 1
+                        FROM work_sessions
+                        WHERE step_id = ?
+                          AND ended_at_ms IS NULL
+                        LIMIT 1
+                        """)) {
+
+                    check.setString(1, id);
+
+                    try (ResultSet rs = check.executeQuery()) {
+                        if (rs.next()) {
+                            throw new SQLException(
+                                    "Stop the active Focus Session before deleting this Step.");
+                        }
+                    }
                 }
 
                 // Delete Step itself

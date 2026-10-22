@@ -52,6 +52,7 @@ public class TimelineView extends VBox {
         private final Button nowButton = new Button("Now");
         private final Label heading = new Label("24h Schedule");
         private final Label dstNotice = new Label();
+        private final Label legacyDstNotice = new Label();
         private final Label legacyNotice = new Label();
         private final Label liveFocusLabel = new Label();
         private final Label liveFocusStatus = new Label();
@@ -119,6 +120,16 @@ public class TimelineView extends VBox {
                 dstNotice.setStyle("-fx-font-size: 11px; -fx-text-fill: #8A5A24;");
                 dstNotice.setVisible(false);
                 dstNotice.setManaged(false);
+
+                legacyDstNotice.setWrapText(true);
+                legacyDstNotice.setVisible(false);
+                legacyDstNotice.setManaged(false);
+
+                legacyDstNotice.setStyle(
+                                "-fx-font-size: 11px;"
+                                                + "-fx-text-fill: #A05220;"
+                                                + "-fx-font-weight: bold;");
+
                 legacyNotice.setWrapText(true);
                 legacyNotice.setStyle("-fx-font-size: 11px; -fx-text-fill: #893030;");
                 legacyNotice.setVisible(false);
@@ -129,8 +140,10 @@ public class TimelineView extends VBox {
                 liveFocusStatus.setVisible(false);
                 liveFocusStatus.setManaged(false);
 
+                // Keep both DST warnings in the VBox before the timeline ScrollPane.
+                // Never insert at indexOf(scrollPane) before it has been added.
                 getChildren().addAll(headingRow, currentStatus, currentTimeProgress,
-                                nextStatus, trackLegend, dstNotice, legacyNotice,
+                                nextStatus, trackLegend, dstNotice, legacyDstNotice, legacyNotice,
                                 liveFocusStatus, scrollPane);
 
                 // Manual interaction turns off auto-follow until the user presses Now.
@@ -219,6 +232,44 @@ public class TimelineView extends VBox {
                 }
                 displayedDate = date;
                 configureTimeAxis(date);
+
+                List<TimeBlock> unresolvedBlocks = blocks.stream()
+                                .filter(block -> ScheduleTimeValidation.check(
+                                                block.start(),
+                                                block.end(),
+                                                axisZone) != null)
+                                .toList();
+
+                boolean hasUnresolved = !unresolvedBlocks.isEmpty();
+
+                legacyDstNotice.setVisible(hasUnresolved);
+                legacyDstNotice.setManaged(hasUnresolved);
+
+                if (hasUnresolved) {
+                        legacyDstNotice.setText(
+                                        "⚠ " + unresolvedBlocks.size()
+                                                        + " Activity(s) have ambiguous DST times. "
+                                                        + "Review them in Planned Activities.");
+
+                        String details = String.join("\n\n",
+                                        unresolvedBlocks.stream()
+                                                        .map(block -> block.title() + "\n"
+                                                                        + block.start() + " → " + block.end()
+                                                                        + "\n"
+                                                                        + ScheduleTimeValidation.check(
+                                                                                        block.start(),
+                                                                                        block.end(),
+                                                                                        axisZone))
+                                                        .toList());
+
+                        legacyDstNotice.setTooltip(
+                                        new Tooltip(details));
+
+                } else {
+                        legacyDstNotice.setText("");
+                        legacyDstNotice.setTooltip(null);
+                }
+
                 displayedBlocks = List.copyOf(blocks);
                 nowButton.setDisable(!date.equals(LocalDate.now()));
 
@@ -275,6 +326,14 @@ public class TimelineView extends VBox {
                                         (overlaps ? "⚠ " : "") + block.title() + "\n"
                                                         + block.start().toLocalTime() + " – "
                                                         + block.end().toLocalTime());
+
+                        if (block.type() == TimeBlock.Type.TASK
+                                        && block.taskId() == null) {
+
+                                eventLabel.setText(
+                                                "⚠ Unlinked\n" + eventLabel.getText());
+                        }
+
                         eventLabel.setLayoutX(64);
                         eventLabel.setLayoutY(y);
                         eventLabel.setPrefHeight(height);
@@ -442,6 +501,14 @@ public class TimelineView extends VBox {
                 TimeBlock current = null;
                 TimeBlock next = null;
                 for (TimeBlock block : displayedBlocks) {
+
+                        if (ScheduleTimeValidation.check(
+                                        block.start(),
+                                        block.end(),
+                                        axisZone) != null) {
+                                continue;
+                        }
+
                         if (!now.isBefore(block.start()) && now.isBefore(block.end())) {
                                 current = block;
                         } else if (block.start().isAfter(now)

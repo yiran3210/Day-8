@@ -8,7 +8,9 @@ import dev.personalagenda.data.TaskStepRepository;
 
 import java.sql.SQLException;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 import javafx.geometry.Pos;
 import javafx.scene.control.*;
@@ -23,6 +25,12 @@ public class TaskStepsView extends VBox {
     private final Runnable onChanged;
     private final Consumer<TaskStep> onSchedule;
     private final Consumer<TaskStep> onFocus;
+
+    private Predicate<TaskStep> deleteGuard = step -> true;
+
+    public void setDeleteGuard(Predicate<TaskStep> guard) {
+        this.deleteGuard = Objects.requireNonNull(guard);
+    }
 
     private final ProgressBar bar = new ProgressBar(0);
     private final Label summary = new Label();
@@ -344,6 +352,11 @@ public class TaskStepsView extends VBox {
                 });
 
                 deleteButton.setOnAction(event -> {
+
+                    if (!deleteGuard.test(step)) {
+                        return;
+                    }
+
                     try {
                         stepRepository.delete(step.id());
 

@@ -257,7 +257,13 @@ public class TimeBlockRepository {
         try (Connection conn = Database.connect();
                 PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, id);
-            stmt.executeUpdate();
+
+            int deleted = stmt.executeUpdate();
+
+            if (deleted != 1) {
+                throw new SQLException(
+                        "Activity has already been deleted: " + id);
+            }
         }
     }
 
@@ -282,7 +288,12 @@ public class TimeBlockRepository {
             stmt.setString(7, block.id());
             ;
 
-            stmt.executeUpdate();
+            int updated = stmt.executeUpdate();
+
+            if (updated != 1) {
+                throw new SQLException(
+                        "Activity no longer exists: " + block.id());
+            }
         }
     }
 

@@ -57,6 +57,7 @@ import javafx.scene.control.MenuItem;
 import javafx.scene.control.OverrunStyle;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TitledPane;
+import javafx.scene.control.Tooltip;
 import javafx.scene.control.Button;
 import javafx.scene.control.Spinner;
 import javafx.scene.control.ProgressBar;
@@ -92,6 +93,7 @@ public class App extends Application {
 
     private BiConsumer<Task, TaskStep> scheduleRequest;
     private BiConsumer<Task, TaskStep> focusRequest;
+    private FocusSessionService focusService;
 
     @Override
     public void start(Stage stage) throws Exception {
@@ -650,6 +652,14 @@ public class App extends Application {
                                 ? linkedTaskInput.getValue().getId()
                                 : null;
 
+                if (blockTypeInput.getValue() == TimeBlock.Type.TASK
+                        && linkedTaskId == null) {
+
+                    blockStatus.setText(
+                            "Select a Task, or use FIXED for an unlinked activity.");
+                    return;
+                }
+
                 if (linkedTaskId != null && !repository.exists(linkedTaskId)) {
                     linkedTaskInput.setValue(null);
                     blockStatus.setText(
@@ -1178,7 +1188,7 @@ public class App extends Application {
         AppIcons.apply(stage);
         stage.setScene(scene);
 
-        FocusSessionService focusService = new FocusSessionService(new WorkSessionRepository());
+        focusService = new FocusSessionService(new WorkSessionRepository());
 
         timeline.setFocusSessionService(focusService);
 
@@ -1651,6 +1661,42 @@ public class App extends Application {
             Button editButton = new Button("Edit");
             Button deleteButton = new Button("×");
 
+            String dstIssue = ScheduleTimeValidation.check(
+                    block.start(),
+                    block.end(),
+                    ZoneId.systemDefault());
+
+            if (dstIssue != null) {
+                label.setText("⚠ DST · " + label.getText());
+
+                String previousTooltip = label.getTooltip() == null
+                        ? ""
+                        : label.getTooltip().getText();
+
+                label.setTooltip(new Tooltip(
+                        previousTooltip
+                                + "\n\nDST WARNING:\n"
+                                + dstIssue
+                                + "\n\nUse Edit to correct the date/time."));
+            }
+
+            boolean unlinkedTaskBlock = block.type() == TimeBlock.Type.TASK
+                    && block.taskId() == null;
+
+            if (unlinkedTaskBlock) {
+                label.setText("⚠ Unlinked · " + label.getText());
+
+                String previousTooltip = label.getTooltip() == null
+                        ? ""
+                        : label.getTooltip().getText();
+
+                label.setTooltip(new Tooltip(
+                        previousTooltip
+                                + "\n\nThis TASK activity has no linked Task."
+                                + "\nIts original Task or Step may have been deleted."
+                                + "\nEdit to relink it or change its type."));
+            }
+
             HBox row = new HBox(8, label, editButton, deleteButton);
 
             TextField titleEdit = new TextField(block.title());
@@ -1784,6 +1830,15 @@ public class App extends Application {
                                     ? linkedTaskEdit.getValue().getId()
                                     : null;
 
+                    if (typeEdit.getValue() == TimeBlock.Type.TASK
+                            && editTaskId == null) {
+
+                        editStatus.setText(
+                                "This TASK activity needs a valid Task. "
+                                        + "Relink it, or change its type to FIXED.");
+                        return;
+                    }
+
                     String editStepId = editTaskId != null
                             && linkedStepEdit.getValue() != null
                                     ? linkedStepEdit.getValue().id()
@@ -1825,7 +1880,8 @@ public class App extends Application {
                 } catch (DateTimeParseException ex) {
                     editStatus.setText("Invalid time. Use HH:mm.");
                 } catch (SQLException ex) {
-                    editStatus.setText("Database update failed.");
+                    editStatus.setText(
+                            "Unable to save activity: " + ex.getMessage());
                     ex.printStackTrace();
                 }
             });
@@ -1838,6 +1894,12 @@ public class App extends Application {
                             repository, timeline, blockList, date);
 
                 } catch (SQLException ex) {
+                    Alert alert = new Alert(Alert.AlertType.ERROR);
+                    alert.setTitle("Day 8 · Activity");
+                    alert.setHeaderText("Unable to delete activity");
+                    alert.setContentText(ex.getMessage());
+                    alert.showAndWait();
+
                     ex.printStackTrace();
                 }
             });
@@ -1880,6 +1942,44 @@ public class App extends Application {
         }
 
         updateProgress(tasks, progressLabel, progressBar, filter);
+    }
+
+    private boolean allowDeleteFocusTarget(
+            String taskId,
+            String stepId) {
+
+        if (focusService == null) {
+            return true;
+        }
+
+        WorkSession session = focusService.activeSession();
+
+        if (session == null) {
+            session = focusService.pausedSession();
+        }
+
+        if (session == null) {
+            return true;
+        }
+
+        boolean protectedTarget = stepId == null
+                ? taskId.equals(session.taskId())
+                : stepId.equals(session.stepId());
+
+        if (!protectedTarget) {
+            return true;
+        }
+
+        Alert warning = new Alert(Alert.AlertType.WARNING);
+        warning.setTitle("Day 8 · Focus");
+        warning.setHeaderText("Cannot delete during Focus");
+        warning.setContentText(
+                "This Task or Step belongs to the current "
+                        + "Focus Session.\n\n"
+                        + "Stop Focus first, then delete it.");
+
+        warning.showAndWait();
+        return false;
     }
 
     private VBox createTaskRow(
@@ -2077,6 +2177,11 @@ public class App extends Application {
                     }
                 });
 
+        stepsView.setDeleteGuard(
+                step -> allowDeleteFocusTarget(
+                        task.getId(),
+                        step.id()));
+
         TextField taskTitleEdit = new TextField(task.getTitle());
 
         Spinner<Integer> taskMinutesEdit = new Spinner<>(
@@ -2180,6 +2285,10 @@ public class App extends Application {
 
         deleteButton.setOnAction(e -> {
 
+            if (!allowDeleteFocusTarget(task.getId(), null)) {
+                return;
+            }
+
             try {
                 repository.delete(task.getId());
 
@@ -2188,6 +2297,10 @@ public class App extends Application {
 
                 updateProgress(tasks, progressLabel, progressBar, filter);
             } catch (SQLException ex) {
+                Alert alert = new Alert(Alert.AlertType.ERROR);
+                alert.setHeaderText("Unable to delete Task");
+                alert.setContentText(ex.getMessage());
+                alert.showAndWait();
                 ex.printStackTrace();
             }
         });

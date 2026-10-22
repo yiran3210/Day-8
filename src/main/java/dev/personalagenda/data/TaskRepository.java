@@ -304,6 +304,25 @@ public class TaskRepository {
             conn.setAutoCommit(false);
 
             try {
+
+                try (PreparedStatement check = conn.prepareStatement("""
+                        SELECT 1
+                        FROM work_sessions
+                        WHERE task_id = ?
+                          AND ended_at_ms IS NULL
+                        LIMIT 1
+                        """)) {
+
+                    check.setString(1, id);
+
+                    try (ResultSet rs = check.executeQuery()) {
+                        if (rs.next()) {
+                            throw new SQLException(
+                                    "Stop the active Focus Session before deleting this Task.");
+                        }
+                    }
+                }
+
                 executeForTask(conn,
                         "UPDATE time_blocks SET task_id = NULL, step_id = NULL WHERE task_id = ?", id);
 
