@@ -3,6 +3,7 @@ package dev.personalagenda;
 import dev.personalagenda.model.Task;
 import dev.personalagenda.model.TimeBlock;
 import dev.personalagenda.model.TaskStep;
+import dev.personalagenda.model.WorkSession;
 import dev.personalagenda.data.Database;
 import dev.personalagenda.data.TaskRepository;
 import dev.personalagenda.data.TaskStepRepository;
@@ -34,6 +35,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.Duration;
+import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.io.IOException;
@@ -133,6 +135,9 @@ public class App extends Application {
         taskCategoryInput.setPrefWidth(110);
 
         Button addButton = new Button("Add");
+
+        Button quickFocusButton = new Button("Quick Add & Focus");
+        quickFocusButton.setMinWidth(Region.USE_PREF_SIZE);
 
         VBox taskList = new VBox(8);
 
@@ -961,8 +966,15 @@ public class App extends Application {
         quickAddTitle.getStyleClass().add("section-heading");
         taskListTitle.getStyleClass().add("section-heading");
 
+        HBox quickFocusRow = new HBox(quickFocusButton);
+        quickFocusRow.setAlignment(Pos.CENTER_RIGHT);
+
         VBox taskComposer = new VBox(
-                10, quickAddTitle, inputRow, dateRow);
+                10,
+                quickAddTitle,
+                inputRow,
+                dateRow,
+                quickFocusRow);
 
         taskComposer.getStyleClass().add("task-composer");
 
@@ -1159,6 +1171,28 @@ public class App extends Application {
 
         FocusSessionService focusService = new FocusSessionService(new WorkSessionRepository());
 
+        timeline.setFocusSessionService(focusService);
+
+        focusService.setOnSessionChanged(() -> {
+
+            LocalDate selectedDate = scheduleDateInput.getValue();
+
+            if (selectedDate == null) {
+                return;
+            }
+
+            try {
+                refreshSchedule(
+                        blockRepository,
+                        timeline,
+                        scheduledBlocks,
+                        selectedDate);
+
+            } catch (SQLException ex) {
+                ex.printStackTrace();
+            }
+        });
+
         FloatingWidget floatingWidget = new FloatingWidget(
                 stage,
                 () -> {
@@ -1256,6 +1290,80 @@ public class App extends Application {
                         "Unable to start Focus: " + ex.getMessage());
             }
         };
+
+        quickFocusButton.setOnAction(event -> {
+
+            // 1. Do not create another task if Focus is busy.
+            if (focusService.state() != FocusSessionService.State.IDLE) {
+                showFocusMessage(
+                        stage,
+                        "Finish the current Focus Session first.");
+                floatingWidget.show();
+                return;
+            }
+
+            String titleText = taskInput.getText().trim();
+
+            if (titleText.isEmpty()) {
+                showFocusMessage(stage, "Enter a task title first.");
+                taskInput.requestFocus();
+                return;
+            }
+
+            // 2. Commit and validate the editable Spinner text.
+            int minutes;
+
+            try {
+                minutes = MinuteSpinnerSupport.read(durationInput);
+            } catch (IllegalArgumentException ex) {
+                showFocusMessage(stage, ex.getMessage());
+                return;
+            }
+
+            try {
+                // 3. Respect unfinished-session recovery.
+                if (new WorkSessionRepository().findActive().isPresent()) {
+                    showFocusMessage(
+                            stage,
+                            "Resolve the unfinished Focus Session first.");
+                    floatingWidget.show();
+                    return;
+                }
+
+                // 4. Create an unscheduled Task.
+                Task quickTask = new Task(titleText, minutes);
+                quickTask.setPlannedDate(null);
+
+                String category = taskCategoryInput.getValue();
+
+                repository.insert(
+                        quickTask,
+                        category == null ? "General" : category);
+
+                // 5. Refresh the Task list.
+                tasks.add(quickTask);
+                taskInput.clear();
+
+                viewFilter.setValue("Backlog");
+
+                refreshTaskList(
+                        tasks,
+                        taskList,
+                        progressLabel,
+                        progressBar,
+                        repository,
+                        viewFilter.getValue());
+
+                // 6. Start Focus using the existing shared service.
+                focusRequest.accept(quickTask, null);
+
+            } catch (SQLException ex) {
+                showFocusMessage(
+                        stage,
+                        "Unable to create Quick Focus Task: "
+                                + ex.getMessage());
+            }
+        });
 
         Button openWidgetButton = new Button("Open Mini Widget");
 
@@ -1472,8 +1580,14 @@ public class App extends Application {
                     categoryColors.getOrDefault(category, "#DCEAFE"));
         }
 
+        ZoneId zone = ZoneId.systemDefault();
+
+        List<WorkSession> actualSessions = new WorkSessionRepository().findFinishedOverlapping(
+                date.atStartOfDay(zone).toInstant(),
+                date.plusDays(1).atStartOfDay(zone).toInstant());
+
         timeline.setTaskColors(taskColors);
-        timeline.showDate(date, blocks);
+        timeline.showDate(date, blocks, actualSessions);
 
         blockList.getChildren().clear();
 

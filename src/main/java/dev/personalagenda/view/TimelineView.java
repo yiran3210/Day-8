@@ -1,12 +1,18 @@
 package dev.personalagenda.view;
 
+import dev.personalagenda.service.FocusSessionService;
+import dev.personalagenda.model.WorkSession;
 import dev.personalagenda.model.TimeBlock;
+import dev.personalagenda.model.WorkSession;
 
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.HashMap;
 
 import javafx.animation.Timeline;
@@ -18,6 +24,8 @@ import javafx.scene.Node;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.ProgressBar;
+import javafx.scene.control.Tooltip;
+import javafx.scene.control.OverrunStyle;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.Priority;
@@ -32,6 +40,12 @@ public class TimelineView extends VBox {
 
         private static final double HOUR_HEIGHT = 40;
         private final Pane canvas = new Pane();
+
+        private FocusSessionService focusService;
+
+        private final Label liveFocusLabel = new Label();
+
+        private final Tooltip liveFocusTooltip = new Tooltip();
 
         private final ScrollPane scrollPane = new ScrollPane(canvas);
         private final Button nowButton = new Button("Now");
@@ -51,6 +65,13 @@ public class TimelineView extends VBox {
 
         public void setTaskColors(Map<String, String> colors) {
                 taskColors = new HashMap<>(colors);
+        }
+
+        public void setFocusSessionService(
+                        FocusSessionService service) {
+
+                this.focusService = Objects.requireNonNull(service);
+                updateLiveFocus();
         }
 
         public TimelineView() {
@@ -78,6 +99,29 @@ public class TimelineView extends VBox {
                 });
 
                 canvas.setPrefSize(320, 24 * HOUR_HEIGHT + 20);
+
+                liveFocusLabel.layoutXProperty().bind(
+                                canvas.widthProperty()
+                                                .subtract(72)
+                                                .multiply(0.58)
+                                                .add(64));
+
+                liveFocusLabel.prefWidthProperty().bind(
+                                canvas.widthProperty()
+                                                .subtract(72)
+                                                .multiply(0.42)
+                                                .subtract(4));
+
+                liveFocusLabel.setMinHeight(0);
+                liveFocusLabel.setWrapText(true);
+                liveFocusLabel.setTooltip(liveFocusTooltip);
+
+                liveFocusLabel.setStyle(
+                                "-fx-background-color: #357E76;"
+                                                + "-fx-background-radius: 4;"
+                                                + "-fx-text-fill: white;"
+                                                + "-fx-padding: 2;");
+
                 canvas.setMinWidth(0);
 
                 scrollPane.setFitToWidth(true);
@@ -98,11 +142,16 @@ public class TimelineView extends VBox {
                 currentTimeProgress.setVisible(false);
                 currentTimeProgress.setManaged(false);
 
+                Label trackLegend = new Label(
+                                "Planned (left)    |    Actual Focus (right)");
+
+                trackLegend.setStyle("-fx-font-size: 11px;");
+
                 getChildren().addAll(
                                 headingRow,
                                 currentStatus,
                                 currentTimeProgress,
-                                nextStatus,
+                                nextStatus, trackLegend,
                                 scrollPane);
 
                 // Pause following when the user scrolls manually.
@@ -138,9 +187,24 @@ public class TimelineView extends VBox {
 
                 clock.setCycleCount(Timeline.INDEFINITE);
                 clock.play();
+
+                Timeline liveTicker = new Timeline(
+                                new KeyFrame(
+                                                javafx.util.Duration.seconds(1),
+                                                event -> updateLiveFocus()));
+
+                liveTicker.setCycleCount(Timeline.INDEFINITE);
+                liveTicker.play();
         }
 
         public void showDate(LocalDate date, List<TimeBlock> blocks) {
+                showDate(date, blocks, List.of());
+        }
+
+        public void showDate(
+                        LocalDate date,
+                        List<TimeBlock> blocks,
+                        List<WorkSession> actualSessions) {
 
                 canvas.getChildren().clear();
 
@@ -209,7 +273,10 @@ public class TimelineView extends VBox {
                         eventLabel.setPrefHeight(height);
 
                         eventLabel.prefWidthProperty().bind(
-                                        canvas.widthProperty().subtract(72));
+                                        canvas.widthProperty()
+                                                        .subtract(72)
+                                                        .multiply(0.58)
+                                                        .subtract(6));
                         eventLabel.setMinHeight(0);
                         eventLabel.setWrapText(true);
 
@@ -248,10 +315,167 @@ public class TimelineView extends VBox {
 
                         canvas.getChildren().add(eventLabel);
                 }
+
+                ZoneId zone = ZoneId.systemDefault();
+
+                for (WorkSession session : actualSessions) {
+
+                        // P5-7a only renders finished segments.
+                        if (session.endedAt() == null) {
+                                continue;
+                        }
+
+                        LocalDateTime sessionStart = LocalDateTime.ofInstant(
+                                        session.startedAt(), zone);
+
+                        LocalDateTime sessionEnd = LocalDateTime.ofInstant(
+                                        session.endedAt(), zone);
+
+                        // Clip sessions to the selected calendar day.
+                        LocalDateTime from = sessionStart.isBefore(dayStart)
+                                        ? dayStart
+                                        : sessionStart;
+
+                        LocalDateTime to = sessionEnd.isAfter(dayEnd)
+                                        ? dayEnd
+                                        : sessionEnd;
+
+                        if (!to.isAfter(from)) {
+                                continue;
+                        }
+
+                        double y = Duration.between(
+                                        dayStart, from).toSeconds()
+                                        / 3600.0 * HOUR_HEIGHT;
+
+                        double height = Duration.between(
+                                        from, to).toSeconds()
+                                        / 3600.0 * HOUR_HEIGHT;
+
+                        String title = session.stepTitle() != null
+                                        ? session.taskTitle() + " · " + session.stepTitle()
+                                        : session.taskTitle();
+
+                        if (title == null || title.isBlank()) {
+                                title = "Unlinked Focus";
+                        }
+
+                        Label actualLabel = new Label(title);
+
+                        actualLabel.setLayoutY(y);
+                        actualLabel.setPrefHeight(Math.max(6, height));
+                        actualLabel.setMinHeight(0);
+
+                        actualLabel.layoutXProperty().bind(
+                                        canvas.widthProperty()
+                                                        .subtract(72)
+                                                        .multiply(0.58)
+                                                        .add(64));
+
+                        actualLabel.prefWidthProperty().bind(
+                                        canvas.widthProperty()
+                                                        .subtract(72)
+                                                        .multiply(0.42)
+                                                        .subtract(4));
+
+                        actualLabel.setWrapText(true);
+                        actualLabel.setTextOverrun(OverrunStyle.ELLIPSIS);
+
+                        actualLabel.setStyle(
+                                        "-fx-background-color: #26364A;"
+                                                        + "-fx-background-radius: 4;"
+                                                        + "-fx-text-fill: white;"
+                                                        + "-fx-padding: 2;");
+
+                        actualLabel.setTooltip(new Tooltip(
+                                        title + "\n"
+                                                        + sessionStart + " → " + sessionEnd
+                                                        + "\nActual Focus · Pause excluded"));
+
+                        canvas.getChildren().add(actualLabel);
+                }
+
+                updateLiveFocus();
+
                 updateNow();
 
                 if (autoFollow) {
                         Platform.runLater(this::scrollToNow);
+                }
+        }
+
+        private void updateLiveFocus() {
+
+                WorkSession session = focusService == null
+                                ? null
+                                : focusService.activeSession();
+
+                if (session == null || displayedDate == null) {
+                        canvas.getChildren().remove(liveFocusLabel);
+                        return;
+                }
+
+                ZoneId zone = ZoneId.systemDefault();
+
+                LocalDateTime sessionStart = LocalDateTime.ofInstant(
+                                session.startedAt(), zone);
+
+                LocalDateTime now = LocalDateTime.ofInstant(
+                                Instant.now(), zone);
+
+                LocalDateTime dayStart = displayedDate.atStartOfDay();
+                LocalDateTime dayEnd = displayedDate.plusDays(1).atStartOfDay();
+
+                LocalDateTime from = sessionStart.isAfter(dayStart)
+                                ? sessionStart
+                                : dayStart;
+
+                LocalDateTime to = now.isBefore(dayEnd)
+                                ? now
+                                : dayEnd;
+
+                if (!to.isAfter(from)) {
+                        canvas.getChildren().remove(liveFocusLabel);
+                        return;
+                }
+
+                double y = Duration.between(
+                                dayStart, from).toMillis()
+                                / 3_600_000.0 * HOUR_HEIGHT;
+
+                double height = Duration.between(
+                                from, to).toMillis()
+                                / 3_600_000.0 * HOUR_HEIGHT;
+
+                String title = session.taskTitle();
+
+                if (title == null || title.isBlank()) {
+                        title = "Unlinked Focus";
+                }
+
+                if (session.stepTitle() != null) {
+                        title += " · " + session.stepTitle();
+                }
+
+                liveFocusLabel.setText("● REC · " + title);
+                liveFocusLabel.setLayoutY(y);
+                liveFocusLabel.setPrefHeight(Math.max(6, height));
+
+                liveFocusTooltip.setText(
+                                title + "\nStarted: " + sessionStart
+                                                + "\nActual time through: " + now);
+
+                if (!canvas.getChildren().contains(liveFocusLabel)) {
+
+                        // Keep the red Now Line above the live focus bar.
+                        int nowIndex = canvas.getChildren().indexOf(nowLine);
+
+                        if (nowIndex >= 0) {
+                                canvas.getChildren().add(
+                                                nowIndex, liveFocusLabel);
+                        } else {
+                                canvas.getChildren().add(liveFocusLabel);
+                        }
                 }
         }
 
