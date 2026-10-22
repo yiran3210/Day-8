@@ -6,6 +6,7 @@ import dev.personalagenda.service.FocusSessionService;
 import dev.personalagenda.view.ScheduleTimeValidation;
 
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -40,6 +41,61 @@ class Phase5RegressionTest {
                                 "Test must never use the production database.");
 
                 Database.initialize();
+        }
+
+        @AfterAll
+        static void verifyDatabaseIntegrityAfterTests()
+                        throws Exception {
+
+                // Ensure this test suite never checks or modifies
+                // the production database.
+                assertTrue(
+                                Database.databasePath().startsWith(
+                                                testDir.toAbsolutePath().normalize()),
+                                "Tests must use the isolated database.");
+
+                try (Connection conn = Database.connect()) {
+
+                        // 1. SQLite structural integrity.
+                        try (PreparedStatement stmt = conn.prepareStatement(
+                                        "PRAGMA integrity_check");
+                                        ResultSet rs = stmt.executeQuery()) {
+
+                                assertTrue(rs.next());
+                                assertEquals("ok", rs.getString(1));
+                                assertFalse(rs.next());
+                        }
+
+                        // 2. No unfinished Focus Session after testing.
+                        assertEquals(0, countRows(conn, """
+                                        SELECT COUNT(*)
+                                        FROM work_sessions
+                                        WHERE ended_at_ms IS NULL
+                                        """), "An unfinished Focus Session remains.");
+
+                        // 3. No scheduled block pointing to a deleted Task.
+                        assertEquals(0, countRows(conn, """
+                                        SELECT COUNT(*)
+                                        FROM time_blocks b
+                                        WHERE b.task_id IS NOT NULL
+                                          AND NOT EXISTS (
+                                              SELECT 1 FROM tasks t
+                                              WHERE t.id = b.task_id
+                                          )
+                                        """), "A scheduled block references a missing Task.");
+
+                        // 4. No scheduled block pointing to an invalid Step.
+                        assertEquals(0, countRows(conn, """
+                                        SELECT COUNT(*)
+                                        FROM time_blocks b
+                                        WHERE b.step_id IS NOT NULL
+                                          AND NOT EXISTS (
+                                              SELECT 1 FROM task_steps s
+                                              WHERE s.id = b.step_id
+                                                AND s.task_id = b.task_id
+                                          )
+                                        """), "A scheduled block references an invalid Step.");
+                }
         }
 
         @Test
@@ -282,6 +338,18 @@ class Phase5RegressionTest {
                                 assertTrue(rs.next());
                                 return rs.getLong(1);
                         }
+                }
+        }
+
+        private static long countRows(
+                        Connection conn,
+                        String sql) throws Exception {
+
+                try (PreparedStatement stmt = conn.prepareStatement(sql);
+                                ResultSet rs = stmt.executeQuery()) {
+
+                        assertTrue(rs.next());
+                        return rs.getLong(1);
                 }
         }
 
