@@ -196,7 +196,9 @@ public class ProjectDashboard extends VBox {
                                                 }
                                         });
 
-                                        Label taskLabel = new Label(task.getTitle());
+                                        Label taskLabel = new Label(
+                                                        task.getTitle()
+                                                                        + (task.isCompleted() ? " ✓" : ""));
                                         HBox.setHgrow(taskLabel, Priority.ALWAYS);
 
                                         assignedRows.getChildren().add(
@@ -247,7 +249,10 @@ public class ProjectDashboard extends VBox {
                                                                 (actual - expected) * 100));
 
                                 ComboBox<Task> taskInput = new ComboBox<>();
-                                taskInput.getItems().setAll(allTasks);
+                                taskInput.getItems().setAll(
+                                                allTasks.stream()
+                                                                .filter(task -> !task.isCompleted())
+                                                                .toList());
                                 taskInput.setPromptText("Choose task");
                                 taskInput.setMaxWidth(Double.MAX_VALUE);
 

@@ -28,6 +28,10 @@ public class TaskStepsView extends VBox {
     private final Label summary = new Label();
     private final VBox stepRows = new VBox(6);
 
+    private final Button toggleButton = new Button("Steps ▸");
+    private final VBox details;
+    private Boolean previousAllStepsCompleted = null;
+
     public TaskStepsView(
             Task task,
             CheckBox parentCheckbox,
@@ -50,8 +54,6 @@ public class TaskStepsView extends VBox {
         bar.setMaxWidth(Double.MAX_VALUE);
         HBox.setHgrow(bar, Priority.ALWAYS);
 
-        Button toggleButton = new Button("Steps ▾");
-
         HBox header = new HBox(
                 10, new Label("Progress"), bar,
                 summary, toggleButton);
@@ -62,6 +64,7 @@ public class TaskStepsView extends VBox {
         stepName.setPromptText("New step");
 
         Spinner<Integer> stepMinutes = new Spinner<>(5, 600, 30, 5);
+        MinuteSpinnerSupport.enable(stepMinutes);
         stepMinutes.setPrefWidth(95);
 
         Button addButton = new Button("+ Step");
@@ -80,15 +83,11 @@ public class TaskStepsView extends VBox {
         stepMinutes.setMinWidth(Region.USE_PREF_SIZE);
         addButton.setMinWidth(Region.USE_PREF_SIZE);
 
-        VBox details = new VBox(8, stepRows, addRow);
-        details.setVisible(false);
-        details.setManaged(false);
+        details = new VBox(8, stepRows, addRow);
 
-        toggleButton.setOnAction(event -> {
-            boolean expanded = !details.isVisible();
-            details.setVisible(expanded);
-            details.setManaged(expanded);
-        });
+        setDetailsExpanded(false);
+
+        toggleButton.setOnAction(event -> setDetailsExpanded(!details.isVisible()));
 
         addButton.setOnAction(event -> {
 
@@ -97,11 +96,23 @@ public class TaskStepsView extends VBox {
                 return;
             }
 
+            int minutes;
+
+            try {
+                minutes = MinuteSpinnerSupport.read(stepMinutes);
+            } catch (IllegalArgumentException ex) {
+                Alert alert = new Alert(Alert.AlertType.WARNING);
+                alert.setHeaderText("Invalid step duration");
+                alert.setContentText(ex.getMessage());
+                alert.showAndWait();
+                return;
+            }
+
             try {
                 TaskStep step = new TaskStep(
                         task.getId(),
                         title,
-                        stepMinutes.getValue());
+                        minutes);
 
                 stepRepository.insert(step);
                 stepName.clear();
@@ -116,6 +127,12 @@ public class TaskStepsView extends VBox {
 
         getChildren().addAll(header, details);
         refresh();
+    }
+
+    private void setDetailsExpanded(boolean expanded) {
+        details.setVisible(expanded);
+        details.setManaged(expanded);
+        toggleButton.setText(expanded ? "Steps ▾" : "Steps ▸");
     }
 
     public void refresh() {
@@ -133,6 +150,18 @@ public class TaskStepsView extends VBox {
                     .sum();
 
             boolean hasSteps = !steps.isEmpty();
+
+            boolean allStepsCompleted = hasSteps
+                    && steps.stream().allMatch(TaskStep::completed);
+
+            // Auto-collapse only when the task changes
+            // from partially completed to fully completed.
+            if (Boolean.FALSE.equals(previousAllStepsCompleted)
+                    && allStepsCompleted) {
+                setDetailsExpanded(false);
+            }
+
+            previousAllStepsCompleted = allStepsCompleted;
 
             int total = hasSteps
                     ? allocated
@@ -231,6 +260,8 @@ public class TaskStepsView extends VBox {
                 Spinner<Integer> stepMinutesEdit = new Spinner<>(
                         1, 1440, step.estimatedMinutes(), 5);
 
+                MinuteSpinnerSupport.enable(stepMinutesEdit);
+
                 stepMinutesEdit.setPrefWidth(105);
 
                 Button saveStepEdit = new Button("Save");
@@ -271,9 +302,18 @@ public class TaskStepsView extends VBox {
                         return;
                     }
 
+                    int minutes;
+
+                    try {
+                        minutes = MinuteSpinnerSupport.read(stepMinutesEdit);
+                    } catch (IllegalArgumentException ex) {
+                        editStatus.setText(ex.getMessage());
+                        return;
+                    }
+
                     try {
                         stepRepository.updateDetails(
-                                step.id(), title, stepMinutesEdit.getValue());
+                                step.id(), title, minutes);
 
                         refresh();
                         onChanged.run();

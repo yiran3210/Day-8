@@ -195,8 +195,12 @@ public class TimelineView extends VBox {
 
                         double y = startMinutes / 60 * HOUR_HEIGHT;
                         double height = durationMinutes / 60 * HOUR_HEIGHT;
+                        boolean overlaps = blocks.stream().anyMatch(other -> !other.id().equals(block.id())
+                                        && block.start().isBefore(other.end())
+                                        && other.start().isBefore(block.end()));
+
                         Label eventLabel = new Label(
-                                        block.title() + "\n" +
+                                        (overlaps ? "⚠ " : "") + block.title() + "\n" +
                                                         block.start().toLocalTime()
                                                         + " – " + block.end().toLocalTime());
 

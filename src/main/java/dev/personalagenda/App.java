@@ -11,6 +11,7 @@ import dev.personalagenda.data.CategoryRepository;
 import dev.personalagenda.data.WorkSessionRepository;
 import dev.personalagenda.data.DailyPlanRepository;
 import dev.personalagenda.view.TimelineView;
+import dev.personalagenda.view.MinuteSpinnerSupport;
 import dev.personalagenda.view.CorrectPlanDialog;
 import dev.personalagenda.view.TaskStepsView;
 import dev.personalagenda.view.ProjectDashboard;
@@ -32,6 +33,7 @@ import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.Duration;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.io.IOException;
@@ -46,6 +48,7 @@ import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ColorPicker;
 import javafx.scene.control.Separator;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.MenuButton;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.OverrunStyle;
@@ -138,6 +141,7 @@ public class App extends Application {
         viewFilter.setValue("Today");
 
         Spinner<Integer> durationInput = new Spinner<>(15, 480, 60, 15);
+        MinuteSpinnerSupport.enable(durationInput);
         durationInput.setPrefWidth(100);
 
         DatePicker plannedDateInput = new DatePicker(LocalDate.now());
@@ -166,7 +170,18 @@ public class App extends Application {
                 return;
             }
 
-            int minutes = durationInput.getValue();
+            int minutes;
+
+            try {
+                minutes = MinuteSpinnerSupport.read(durationInput);
+            } catch (IllegalArgumentException ex) {
+                Alert alert = new Alert(Alert.AlertType.WARNING);
+                alert.setHeaderText("Invalid task duration");
+                alert.setContentText(ex.getMessage());
+                alert.showAndWait();
+                return;
+            }
+
             Task newTask = new Task(taskTitle, minutes);
             newTask.setPlannedDate(plannedDateInput.getValue());
 
@@ -475,7 +490,7 @@ public class App extends Application {
         HBox nextDayRow = new HBox(8, nextDayInput);
         nextDayRow.setAlignment(Pos.CENTER_LEFT);
 
-        CheckBox autoEndInput = new CheckBox("Auto end from estimate");
+        CheckBox autoEndInput = new CheckBox("Auto end from remaining estimate");
 
         autoEndInput.getStyleClass().add("schedule-option");
         nextDayInput.getStyleClass().add("schedule-option");
@@ -484,37 +499,73 @@ public class App extends Application {
 
         nextDayRow.getChildren().add(0, autoEndInput);
 
+        Label scheduleBudgetStatus = new Label();
+        scheduleBudgetStatus.setWrapText(true);
+
         Runnable recalculateEnd = () -> {
 
-            if (!autoEndInput.isSelected()
-                    || blockTypeInput.getValue() != TimeBlock.Type.TASK
+            if (blockTypeInput.getValue() != TimeBlock.Type.TASK
                     || linkedTaskInput.getValue() == null
                     || scheduleDateInput.getValue() == null) {
-                return;
-            }
 
-            int minutes = linkedStepInput.getValue() != null
-                    ? linkedStepInput.getValue().estimatedMinutes()
-                    : linkedTaskInput.getValue().getEstimatedMinutes();
-
-            if (minutes <= 0) {
+                scheduleBudgetStatus.setText("");
                 return;
             }
 
             try {
+                Task task = linkedTaskInput.getValue();
+
+                long scheduled = blockRepository.sumScheduledMinutes(
+                        task.getId(), null);
+
+                long budget = getTaskPlannedMinutes(task);
+
+                long remaining = remainingAutoScheduleMinutes(
+                        blockRepository,
+                        task,
+                        linkedStepInput.getValue());
+
+                long scheduledOnDate = blockRepository.sumScheduledMinutesForDate(
+                        task.getId(),
+                        null,
+                        scheduleDateInput.getValue());
+
+                scheduleBudgetStatus.setText(
+                        "On " + scheduleDateInput.getValue()
+                                + ": " + scheduledOnDate + " min"
+                                + " · All dates: " + scheduled + "/" + budget
+                                + " min"
+                                + " · Auto remaining: " + remaining + " min");
+
+                if (!autoEndInput.isSelected()) {
+                    return;
+                }
+
+                if (remaining <= 0) {
+                    scheduleBudgetStatus.setText(
+                            "Estimated time fully scheduled. "
+                                    + "Turn off Auto end to add an extra slot.");
+                    return;
+                }
+
                 LocalDateTime start = scheduleDateInput.getValue().atTime(
                         LocalTime.parse(startTimeInput.getText().trim()));
 
-                LocalDateTime end = start.plusMinutes(minutes);
+                LocalDateTime end = start.plusMinutes(remaining);
 
                 endTimeInput.setText(end.toLocalTime().toString());
 
                 nextDayInput.setSelected(
                         end.toLocalDate().isAfter(start.toLocalDate()));
 
-            } catch (DateTimeParseException ex) {
-                // Wait until the user finishes entering a valid time.
+            } catch (DateTimeParseException ignored) {
+                // Wait until time input is valid.
+            } catch (SQLException ex) {
+                scheduleBudgetStatus.setText(
+                        "Unable to calculate scheduled minutes.");
+                ex.printStackTrace();
             }
+
         };
 
         Runnable updateAutoMode = () -> {
@@ -615,6 +666,23 @@ public class App extends Application {
                     return;
                 }
 
+                if (autoEndInput.isSelected() && linkedTaskId != null) {
+
+                    long remaining = remainingAutoScheduleMinutes(
+                            blockRepository,
+                            linkedTaskInput.getValue(),
+                            linkedStepInput.getValue());
+
+                    if (remaining <= 0) {
+                        blockStatus.setText(
+                                "No estimated time remaining. "
+                                        + "Turn off Auto end for an additional slot.");
+                        return;
+                    }
+
+                    end = start.plusMinutes(remaining);
+                }
+
                 TimeBlock block = new TimeBlock(
                         titleText,
                         start,
@@ -622,6 +690,12 @@ public class App extends Application {
                         blockTypeInput.getValue(),
                         linkedTaskId,
                         linkedStepId);
+
+                if (!confirmActivityOverlap(blockRepository, block)) {
+                    blockStatus.setText(
+                            "Not saved: schedule overlap was cancelled.");
+                    return;
+                }
 
                 blockRepository.insert(block);
 
@@ -730,7 +804,10 @@ public class App extends Application {
         // Row 5: save action, aligned to the right
         saveBlockButton.setMinWidth(Region.USE_PREF_SIZE);
 
-        scheduleFormGrid.add(saveBlockButton, 3, 5);
+        scheduleFormGrid.add(
+                scheduleBudgetStatus, 0, 5, 4, 1);
+
+        scheduleFormGrid.add(saveBlockButton, 3, 6);
 
         GridPane.setHalignment(
                 saveBlockButton,
@@ -1310,6 +1387,65 @@ public class App extends Application {
         }
     }
 
+    private boolean confirmActivityOverlap(
+            TimeBlockRepository repository,
+            TimeBlock candidate) throws SQLException {
+
+        List<TimeBlock> overlaps = repository.findOverlaps(
+                candidate.start(),
+                candidate.end(),
+                candidate.id());
+
+        if (overlaps.isEmpty()) {
+            return true;
+        }
+
+        List<String> descriptions = overlaps.stream()
+                .limit(6)
+                .map(existing -> {
+                    LocalDateTime from = candidate.start()
+                            .isAfter(existing.start())
+                                    ? candidate.start()
+                                    : existing.start();
+
+                    LocalDateTime to = candidate.end()
+                            .isBefore(existing.end())
+                                    ? candidate.end()
+                                    : existing.end();
+
+                    long minutes = Duration.between(
+                            from, to).toMinutes();
+
+                    return existing.title()
+                            + "\n"
+                            + from + " → " + to
+                            + " (" + minutes + " min overlap)";
+                })
+                .toList();
+
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.setTitle("Day 8 · Schedule Conflict");
+        alert.setHeaderText(
+                "This activity overlaps with "
+                        + overlaps.size() + " existing activity(s).");
+
+        alert.setContentText(
+                String.join("\n\n", descriptions)
+                        + (overlaps.size() > 6
+                                ? "\n\n...and more conflicts."
+                                : "")
+                        + "\n\nKeep the overlapping schedule?");
+
+        ButtonType keepButton = new ButtonType("Keep Overlap");
+
+        alert.getButtonTypes().setAll(
+                keepButton,
+                ButtonType.CANCEL);
+
+        return alert.showAndWait()
+                .orElse(ButtonType.CANCEL) == keepButton;
+    }
+
     private void refreshSchedule(
             TimeBlockRepository repository,
             TimelineView timeline,
@@ -1353,8 +1489,16 @@ public class App extends Application {
                 timeText += " (+next day)";
             }
 
+            List<TimeBlock> conflicts = repository.findOverlaps(
+                    block.start(),
+                    block.end(),
+                    block.id());
+
+            boolean hasOverlap = !conflicts.isEmpty();
+
             Label label = new Label(
-                    timeText + "  ·  " + block.title());
+                    (hasOverlap ? "⚠ " : "")
+                            + timeText + "  ·  " + block.title());
 
             if (block.taskId() != null) {
                 label.setText(label.getText() + "  · linked");
@@ -1365,9 +1509,19 @@ public class App extends Application {
             label.setTextOverrun(
                     javafx.scene.control.OverrunStyle.ELLIPSIS);
 
-            label.setTooltip(new javafx.scene.control.Tooltip(
-                    block.title() + "\n"
-                            + block.start() + " → " + block.end()));
+            String tooltip = block.title() + "\n"
+                    + block.start() + " → " + block.end();
+
+            if (hasOverlap) {
+                tooltip += "\n\n⚠ Overlaps with:\n"
+                        + String.join("\n",
+                                conflicts.stream()
+                                        .map(TimeBlock::title)
+                                        .toList());
+            }
+
+            label.setTooltip(
+                    new javafx.scene.control.Tooltip(tooltip));
 
             HBox.setHgrow(label, Priority.ALWAYS);
 
@@ -1520,6 +1674,12 @@ public class App extends Application {
                             typeEdit.getValue(),
                             editTaskId,
                             editStepId);
+
+                    if (!confirmActivityOverlap(repository, updatedBlock)) {
+                        editStatus.setText(
+                                "Update cancelled: schedule overlap.");
+                        return;
+                    }
 
                     repository.update(updatedBlock);
 
@@ -1786,6 +1946,8 @@ public class App extends Application {
         Spinner<Integer> taskMinutesEdit = new Spinner<>(
                 1, 1440, task.getEstimatedMinutes(), 5);
 
+        MinuteSpinnerSupport.enable(taskMinutesEdit);
+
         taskMinutesEdit.setPrefWidth(105);
 
         Button saveTaskEdit = new Button("Save");
@@ -1819,7 +1981,14 @@ public class App extends Application {
         saveTaskEdit.setOnAction(event -> {
 
             String title = taskTitleEdit.getText().trim();
-            int minutes = taskMinutesEdit.getValue();
+            int minutes;
+
+            try {
+                minutes = MinuteSpinnerSupport.read(taskMinutesEdit);
+            } catch (IllegalArgumentException ex) {
+                taskEditStatus.setText(ex.getMessage());
+                return;
+            }
 
             if (title.isEmpty()) {
                 taskEditStatus.setText("Task title is required.");
@@ -1931,6 +2100,26 @@ public class App extends Application {
             ex.printStackTrace();
             return task.getEstimatedMinutes();
         }
+    }
+
+    private long remainingAutoScheduleMinutes(
+            TimeBlockRepository blocks,
+            Task task,
+            TaskStep step) throws SQLException {
+
+        long taskRemaining = (long) getTaskPlannedMinutes(task)
+                - blocks.sumScheduledMinutes(task.getId(), null);
+
+        if (step == null) {
+            return Math.max(0L, taskRemaining);
+        }
+
+        long stepRemaining = (long) step.estimatedMinutes()
+                - blocks.sumScheduledMinutes(task.getId(), step.id());
+
+        return Math.max(
+                0L,
+                Math.min(taskRemaining, stepRemaining));
     }
 
     private boolean isTaskActuallyCompleted(Task task) {
