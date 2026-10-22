@@ -15,6 +15,7 @@ import dev.personalagenda.view.TimelineView;
 import dev.personalagenda.view.MinuteSpinnerSupport;
 import dev.personalagenda.view.CorrectPlanDialog;
 import dev.personalagenda.view.TaskStepsView;
+import dev.personalagenda.view.ScheduleTimeValidation;
 import dev.personalagenda.view.ProjectDashboard;
 import dev.personalagenda.view.FloatingWidget;
 import dev.personalagenda.view.AppIcons;
@@ -686,6 +687,14 @@ public class App extends Application {
                     }
 
                     end = start.plusMinutes(remaining);
+                }
+
+                String dstError = ScheduleTimeValidation.check(
+                        start, end, ZoneId.systemDefault());
+
+                if (dstError != null) {
+                    blockStatus.setText(dstError);
+                    return;
                 }
 
                 TimeBlock block = new TimeBlock(
@@ -1779,6 +1788,19 @@ public class App extends Application {
                             && linkedStepEdit.getValue() != null
                                     ? linkedStepEdit.getValue().id()
                                     : null;
+
+                    boolean timeChanged = !newStart.equals(block.start())
+                            || !newEnd.equals(block.end());
+
+                    if (timeChanged) {
+                        String dstError = ScheduleTimeValidation.check(
+                                newStart, newEnd, ZoneId.systemDefault());
+
+                        if (dstError != null) {
+                            editStatus.setText(dstError);
+                            return;
+                        }
+                    }
 
                     TimeBlock updatedBlock = new TimeBlock(
                             block.id(),

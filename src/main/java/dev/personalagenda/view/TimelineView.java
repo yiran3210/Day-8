@@ -1,478 +1,416 @@
 package dev.personalagenda.view;
 
-import dev.personalagenda.service.FocusSessionService;
-import dev.personalagenda.model.WorkSession;
 import dev.personalagenda.model.TimeBlock;
 import dev.personalagenda.model.WorkSession;
+import dev.personalagenda.service.FocusSessionService;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.HashMap;
 
+import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.application.Platform;
-import javafx.scene.control.Button;
-import javafx.scene.input.ScrollEvent;
-import javafx.scene.input.MouseEvent;
+import javafx.geometry.Pos;
 import javafx.scene.Node;
+import javafx.scene.control.Button;
 import javafx.scene.control.Label;
-import javafx.scene.control.ScrollPane;
-import javafx.scene.control.ProgressBar;
-import javafx.scene.control.Tooltip;
 import javafx.scene.control.OverrunStyle;
+import javafx.scene.control.ProgressBar;
+import javafx.scene.control.ScrollPane;
+import javafx.scene.control.Tooltip;
+import javafx.scene.input.MouseEvent;
+import javafx.scene.input.ScrollEvent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.Priority;
-import javafx.scene.layout.VBox;
 import javafx.scene.layout.Region;
-import javafx.scene.shape.Line;
+import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
-import javafx.animation.KeyFrame;
-import javafx.animation.Timeline;
+import javafx.scene.shape.Line;
 
+/**
+ * Timeline with separate planned and actual tracks, using real elapsed time on
+ * DST days.
+ */
 public class TimelineView extends VBox {
 
-        private static final double HOUR_HEIGHT = 40;
+        private static final double HOUR_HEIGHT = 40.0;
+        private static final DateTimeFormatter DST_TICK_FORMAT = DateTimeFormatter.ofPattern("HH:mm z", Locale.ENGLISH);
+
         private final Pane canvas = new Pane();
-
-        private FocusSessionService focusService;
-
-        private final Label liveFocusLabel = new Label();
-
-        private final Tooltip liveFocusTooltip = new Tooltip();
-
         private final ScrollPane scrollPane = new ScrollPane(canvas);
         private final Button nowButton = new Button("Now");
-
-        private boolean autoFollow = true;
-
+        private final Label heading = new Label("24h Schedule");
+        private final Label dstNotice = new Label();
+        private final Label legacyNotice = new Label();
+        private final Label liveFocusLabel = new Label();
+        private final Label liveFocusStatus = new Label();
+        private final Tooltip liveFocusTooltip = new Tooltip();
         private final ProgressBar currentTimeProgress = new ProgressBar(0);
+        private final Label currentStatus = new Label();
+        private final Label nextStatus = new Label();
+        private final Line nowLine = new Line();
 
+        private FocusSessionService focusService;
+        private boolean autoFollow = true;
         private LocalDate displayedDate;
         private List<TimeBlock> displayedBlocks = List.of();
         private Map<String, String> taskColors = new HashMap<>();
 
-        private final Label currentStatus = new Label();
-        private final Label nextStatus = new Label();
-
-        private final Line nowLine = new Line();
-
-        public void setTaskColors(Map<String, String> colors) {
-                taskColors = new HashMap<>(colors);
-        }
-
-        public void setFocusSessionService(
-                        FocusSessionService service) {
-
-                this.focusService = Objects.requireNonNull(service);
-                updateLiveFocus();
-        }
+        private Instant axisStart;
+        private Instant axisEnd;
+        private ZoneId axisZone;
 
         public TimelineView() {
+                nowLine.endXProperty().bind(canvas.widthProperty().subtract(10));
 
-                nowLine.endXProperty().bind(
-                                canvas.widthProperty().subtract(10));
-
-                Label heading = new Label("24h Schedule");
-
-                Region headingSpacer = new Region();
-
-                HBox.setHgrow(headingSpacer, Priority.ALWAYS);
-
-                HBox headingRow = new HBox(
-                                12, heading, headingSpacer, nowButton);
-
-                headingRow.setAlignment(
-                                javafx.geometry.Pos.CENTER_LEFT);
-
+                Region spacer = new Region();
+                HBox.setHgrow(spacer, Priority.ALWAYS);
+                HBox headingRow = new HBox(12, heading, spacer, nowButton);
+                headingRow.setAlignment(Pos.CENTER_LEFT);
                 nowButton.setMinWidth(Region.USE_PREF_SIZE);
-
                 nowButton.setOnAction(event -> {
                         autoFollow = true;
                         scrollToNow();
                 });
 
                 canvas.setPrefSize(320, 24 * HOUR_HEIGHT + 20);
+                canvas.setMinWidth(0);
+                scrollPane.setFitToWidth(true);
+                scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+                VBox.setVgrow(scrollPane, Priority.ALWAYS);
 
                 liveFocusLabel.layoutXProperty().bind(
-                                canvas.widthProperty()
-                                                .subtract(72)
-                                                .multiply(0.58)
-                                                .add(64));
-
+                                canvas.widthProperty().subtract(72).multiply(0.58).add(64));
                 liveFocusLabel.prefWidthProperty().bind(
-                                canvas.widthProperty()
-                                                .subtract(72)
-                                                .multiply(0.42)
-                                                .subtract(4));
-
+                                canvas.widthProperty().subtract(72).multiply(0.42).subtract(4));
                 liveFocusLabel.setMinHeight(0);
                 liveFocusLabel.setWrapText(true);
                 liveFocusLabel.setTooltip(liveFocusTooltip);
-
                 liveFocusLabel.setStyle(
                                 "-fx-background-color: #357E76;"
                                                 + "-fx-background-radius: 4;"
                                                 + "-fx-text-fill: white;"
                                                 + "-fx-padding: 2;");
 
-                canvas.setMinWidth(0);
-
-                scrollPane.setFitToWidth(true);
-                scrollPane.setHbarPolicy(
-                                ScrollPane.ScrollBarPolicy.NEVER);
-
-                VBox.setVgrow(scrollPane, Priority.ALWAYS);
-
                 setSpacing(10);
                 setPrefWidth(360);
                 setMinWidth(240);
-
                 currentStatus.setWrapText(true);
                 nextStatus.setWrapText(true);
-
                 currentTimeProgress.setMaxWidth(Double.MAX_VALUE);
                 currentTimeProgress.setPrefHeight(10);
                 currentTimeProgress.setVisible(false);
                 currentTimeProgress.setManaged(false);
 
-                Label trackLegend = new Label(
-                                "Planned (left)    |    Actual Focus (right)");
-
+                Label trackLegend = new Label("Planned (left)    |    Actual Focus (right)");
                 trackLegend.setStyle("-fx-font-size: 11px;");
+                dstNotice.setWrapText(true);
+                dstNotice.setStyle("-fx-font-size: 11px; -fx-text-fill: #8A5A24;");
+                dstNotice.setVisible(false);
+                dstNotice.setManaged(false);
+                legacyNotice.setWrapText(true);
+                legacyNotice.setStyle("-fx-font-size: 11px; -fx-text-fill: #893030;");
+                legacyNotice.setVisible(false);
+                legacyNotice.setManaged(false);
+                liveFocusStatus.setWrapText(true);
+                liveFocusStatus.setStyle(
+                                "-fx-font-size: 12px; -fx-text-fill: #357E76; -fx-font-weight: bold;");
+                liveFocusStatus.setVisible(false);
+                liveFocusStatus.setManaged(false);
 
-                getChildren().addAll(
-                                headingRow,
-                                currentStatus,
-                                currentTimeProgress,
-                                nextStatus, trackLegend,
-                                scrollPane);
+                getChildren().addAll(headingRow, currentStatus, currentTimeProgress,
+                                nextStatus, trackLegend, dstNotice, legacyNotice,
+                                liveFocusStatus, scrollPane);
 
-                // Pause following when the user scrolls manually.
-                scrollPane.addEventFilter(
-                                ScrollEvent.SCROLL,
-                                event -> autoFollow = false);
+                // Manual interaction turns off auto-follow until the user presses Now.
+                scrollPane.addEventFilter(ScrollEvent.SCROLL, event -> autoFollow = false);
+                scrollPane.addEventFilter(MouseEvent.MOUSE_PRESSED, event -> {
+                        Node node = event.getPickResult().getIntersectedNode();
+                        while (node != null && node != scrollPane) {
+                                if (node.getStyleClass().contains("scroll-bar")) {
+                                        autoFollow = false;
+                                        break;
+                                }
+                                node = node.getParent();
+                        }
+                });
+                scrollPane.viewportBoundsProperty().addListener((obs, oldBounds, newBounds) -> {
+                        if (autoFollow) {
+                                Platform.runLater(this::scrollToNow);
+                        }
+                });
 
-                // Also detect manual scrollbar dragging.
-                scrollPane.addEventFilter(
-                                MouseEvent.MOUSE_PRESSED,
-                                event -> {
-                                        Node node = event.getPickResult().getIntersectedNode();
-
-                                        while (node != null && node != scrollPane) {
-                                                if (node.getStyleClass().contains("scroll-bar")) {
-                                                        autoFollow = false;
-                                                        break;
-                                                }
-                                                node = node.getParent();
-                                        }
-                                });
-
-                // Reposition when the viewport obtains its actual size.
-                scrollPane.viewportBoundsProperty().addListener(
-                                (obs, oldBounds, newBounds) -> {
-                                        if (autoFollow) {
-                                                Platform.runLater(this::scrollToNow);
-                                        }
-                                });
-
-                Timeline clock = new Timeline(
-                                new KeyFrame(javafx.util.Duration.seconds(30), event -> updateNow()));
-
+                Timeline clock = new Timeline(new KeyFrame(
+                                javafx.util.Duration.seconds(30), event -> updateNow()));
                 clock.setCycleCount(Timeline.INDEFINITE);
                 clock.play();
 
-                Timeline liveTicker = new Timeline(
-                                new KeyFrame(
-                                                javafx.util.Duration.seconds(1),
-                                                event -> updateLiveFocus()));
-
+                Timeline liveTicker = new Timeline(new KeyFrame(
+                                javafx.util.Duration.seconds(1), event -> updateLiveFocus()));
                 liveTicker.setCycleCount(Timeline.INDEFINITE);
                 liveTicker.play();
+        }
+
+        public void setTaskColors(Map<String, String> colors) {
+                taskColors = new HashMap<>(Objects.requireNonNull(colors));
+        }
+
+        public void setFocusSessionService(FocusSessionService service) {
+                focusService = Objects.requireNonNull(service);
+                updateLiveFocus();
+        }
+
+        private void configureTimeAxis(LocalDate date) {
+                axisZone = ZoneId.systemDefault();
+                axisStart = date.atStartOfDay(axisZone).toInstant();
+                axisEnd = date.plusDays(1).atStartOfDay(axisZone).toInstant();
+                long seconds = Duration.between(axisStart, axisEnd).getSeconds();
+                double hours = seconds / 3600.0;
+                canvas.setPrefHeight(hours * HOUR_HEIGHT + 20);
+                heading.setText(seconds == 86400 ? "24h Schedule"
+                                : ((int) hours) + "h Schedule");
+                dstNotice.setText(seconds == 90000
+                                ? "DST: 25-hour day · repeated hour shown twice"
+                                : seconds == 82800
+                                                ? "DST: 23-hour day · skipped hour omitted"
+                                                : "Time-zone transition: " + hours + "-hour day");
+                dstNotice.setVisible(seconds != 86400);
+                dstNotice.setManaged(seconds != 86400);
+        }
+
+        private double yForInstant(Instant instant) {
+                return Duration.between(axisStart, instant).toMillis()
+                                / 3_600_000.0 * HOUR_HEIGHT;
+        }
+
+        /**
+         * No guessing whether an ambiguous wall-clock time is the first or second
+         * occurrence.
+         */
+        private Instant strictLocalInstant(LocalDateTime time) {
+                List<ZoneOffset> offsets = axisZone.getRules().getValidOffsets(time);
+                return offsets.size() == 1 ? time.toInstant(offsets.get(0)) : null;
         }
 
         public void showDate(LocalDate date, List<TimeBlock> blocks) {
                 showDate(date, blocks, List.of());
         }
 
-        public void showDate(
-                        LocalDate date,
-                        List<TimeBlock> blocks,
+        public void showDate(LocalDate date, List<TimeBlock> blocks,
                         List<WorkSession> actualSessions) {
+                Objects.requireNonNull(date);
+                Objects.requireNonNull(blocks);
+                Objects.requireNonNull(actualSessions);
 
                 canvas.getChildren().clear();
-
                 if (!date.equals(displayedDate)) {
                         autoFollow = date.equals(LocalDate.now());
                 }
-
                 displayedDate = date;
-                displayedBlocks = blocks;
-
+                configureTimeAxis(date);
+                displayedBlocks = List.copyOf(blocks);
                 nowButton.setDisable(!date.equals(LocalDate.now()));
 
-                for (int hour = 0; hour <= 24; hour++) {
-
+                long daySeconds = Duration.between(axisStart, axisEnd).getSeconds();
+                int hours = (int) (daySeconds / 3600);
+                boolean dstDay = daySeconds != 86400;
+                for (int hour = 0; hour <= hours; hour++) {
                         double y = hour * HOUR_HEIGHT;
-
-                        Label timeLabel = new Label(
-                                        String.format("%02d:00", hour));
-
+                        Instant tick = axisStart.plusSeconds(hour * 3600L);
+                        String text = tick.equals(axisEnd) ? "00:00 (+1d)"
+                                        : dstDay ? tick.atZone(axisZone).format(DST_TICK_FORMAT)
+                                                        : String.format("%02d:00", hour);
+                        Label timeLabel = new Label(text);
                         timeLabel.setLayoutX(4);
                         timeLabel.setLayoutY(y);
-
                         Line line = new Line(56, y, 280, y);
-                        line.endXProperty().bind(
-                                        canvas.widthProperty().subtract(10));
-
+                        line.endXProperty().bind(canvas.widthProperty().subtract(10));
                         line.setStroke(Color.LIGHTGRAY);
-
                         canvas.getChildren().addAll(timeLabel, line);
                 }
 
                 LocalDateTime dayStart = date.atStartOfDay();
                 LocalDateTime dayEnd = date.plusDays(1).atStartOfDay();
-
+                int skippedLegacy = 0;
                 for (TimeBlock block : blocks) {
-
+                        // Old ambiguous or transition-crossing planned blocks cannot be
+                        // placed on an instant-based axis without inventing an offset.
+                        if (ScheduleTimeValidation.check(
+                                        block.start(), block.end(), axisZone) != null) {
+                                skippedLegacy++;
+                                continue;
+                        }
                         LocalDateTime start = block.start().isBefore(dayStart)
                                         ? dayStart
                                         : block.start();
-
                         LocalDateTime end = block.end().isAfter(dayEnd)
                                         ? dayEnd
                                         : block.end();
-
                         if (!end.isAfter(start)) {
                                 continue;
                         }
-
-                        double startMinutes = Duration.between(dayStart, start).toMinutes();
-
-                        double durationMinutes = Duration.between(start, end).toMinutes();
-
-                        double y = startMinutes / 60 * HOUR_HEIGHT;
-                        double height = durationMinutes / 60 * HOUR_HEIGHT;
+                        Instant from = strictLocalInstant(start);
+                        Instant to = strictLocalInstant(end);
+                        if (from == null || to == null || !to.isAfter(from)) {
+                                skippedLegacy++;
+                                continue;
+                        }
+                        double y = yForInstant(from);
+                        double height = yForInstant(to) - y;
                         boolean overlaps = blocks.stream().anyMatch(other -> !other.id().equals(block.id())
                                         && block.start().isBefore(other.end())
                                         && other.start().isBefore(block.end()));
-
                         Label eventLabel = new Label(
-                                        (overlaps ? "⚠ " : "") + block.title() + "\n" +
-                                                        block.start().toLocalTime()
-                                                        + " – " + block.end().toLocalTime());
-
+                                        (overlaps ? "⚠ " : "") + block.title() + "\n"
+                                                        + block.start().toLocalTime() + " – "
+                                                        + block.end().toLocalTime());
                         eventLabel.setLayoutX(64);
                         eventLabel.setLayoutY(y);
                         eventLabel.setPrefHeight(height);
-
                         eventLabel.prefWidthProperty().bind(
-                                        canvas.widthProperty()
-                                                        .subtract(72)
-                                                        .multiply(0.58)
-                                                        .subtract(6));
+                                        canvas.widthProperty().subtract(72).multiply(0.58).subtract(6));
                         eventLabel.setMinHeight(0);
                         eventLabel.setWrapText(true);
-
                         String typeStyle = switch (block.type()) {
                                 case TASK -> "time-block-task";
                                 case FIXED -> "time-block-fixed";
                                 case REST -> "time-block-rest";
                                 case FREE -> "time-block-free";
                         };
-
-                        eventLabel.getStyleClass().addAll(
-                                        "time-block",
-                                        typeStyle);
-
+                        eventLabel.getStyleClass().addAll("time-block", typeStyle);
                         String categoryColor = block.taskId() == null
                                         ? null
                                         : taskColors.get(block.taskId());
-
-                        if (block.type() == TimeBlock.Type.TASK
-                                        && categoryColor != null) {
-
+                        if (block.type() == TimeBlock.Type.TASK && categoryColor != null) {
                                 Color background = Color.web(categoryColor);
-
                                 double brightness = background.getRed() * 0.2126
                                                 + background.getGreen() * 0.7152
                                                 + background.getBlue() * 0.0722;
-
-                                String textColor = brightness > 0.55
-                                                ? "#26354A"
-                                                : "#FFFFFF";
-
-                                eventLabel.setStyle(
-                                                "-fx-background-color: " + categoryColor + ";"
-                                                                + "-fx-text-fill: " + textColor + ";");
+                                String textColor = brightness > 0.55 ? "#26354A" : "#FFFFFF";
+                                eventLabel.setStyle("-fx-background-color: " + categoryColor
+                                                + ";-fx-text-fill: " + textColor + ";");
                         }
-
+                        eventLabel.setTooltip(new Tooltip(
+                                        block.title() + "\n" + block.start() + " → " + block.end()
+                                                        + (overlaps ? "\n⚠ Overlapping planned activities" : "")));
                         canvas.getChildren().add(eventLabel);
                 }
-
-                ZoneId zone = ZoneId.systemDefault();
+                legacyNotice.setText(skippedLegacy == 0 ? ""
+                                : "⚠ " + skippedLegacy + " planned activity(s) hidden: "
+                                                + "ambiguous or invalid local time. Check/edit these activities in Day Plan.");
+                legacyNotice.setVisible(skippedLegacy > 0);
+                legacyNotice.setManaged(skippedLegacy > 0);
 
                 for (WorkSession session : actualSessions) {
-
-                        // P5-7a only renders finished segments.
                         if (session.endedAt() == null) {
                                 continue;
                         }
-
-                        LocalDateTime sessionStart = LocalDateTime.ofInstant(
-                                        session.startedAt(), zone);
-
-                        LocalDateTime sessionEnd = LocalDateTime.ofInstant(
-                                        session.endedAt(), zone);
-
-                        // Clip sessions to the selected calendar day.
-                        LocalDateTime from = sessionStart.isBefore(dayStart)
-                                        ? dayStart
-                                        : sessionStart;
-
-                        LocalDateTime to = sessionEnd.isAfter(dayEnd)
-                                        ? dayEnd
-                                        : sessionEnd;
-
+                        Instant from = session.startedAt().isBefore(axisStart)
+                                        ? axisStart
+                                        : session.startedAt();
+                        Instant to = session.endedAt().isAfter(axisEnd)
+                                        ? axisEnd
+                                        : session.endedAt();
                         if (!to.isAfter(from)) {
                                 continue;
                         }
-
-                        double y = Duration.between(
-                                        dayStart, from).toSeconds()
-                                        / 3600.0 * HOUR_HEIGHT;
-
-                        double height = Duration.between(
-                                        from, to).toSeconds()
-                                        / 3600.0 * HOUR_HEIGHT;
-
-                        String title = session.stepTitle() != null
-                                        ? session.taskTitle() + " · " + session.stepTitle()
-                                        : session.taskTitle();
-
-                        if (title == null || title.isBlank()) {
-                                title = "Unlinked Focus";
-                        }
-
+                        double y = yForInstant(from);
+                        double height = yForInstant(to) - y;
+                        String title = focusTitle(session);
                         Label actualLabel = new Label(title);
-
                         actualLabel.setLayoutY(y);
                         actualLabel.setPrefHeight(Math.max(6, height));
                         actualLabel.setMinHeight(0);
-
                         actualLabel.layoutXProperty().bind(
-                                        canvas.widthProperty()
-                                                        .subtract(72)
-                                                        .multiply(0.58)
-                                                        .add(64));
-
+                                        canvas.widthProperty().subtract(72).multiply(0.58).add(64));
                         actualLabel.prefWidthProperty().bind(
-                                        canvas.widthProperty()
-                                                        .subtract(72)
-                                                        .multiply(0.42)
-                                                        .subtract(4));
-
+                                        canvas.widthProperty().subtract(72).multiply(0.42).subtract(4));
                         actualLabel.setWrapText(true);
                         actualLabel.setTextOverrun(OverrunStyle.ELLIPSIS);
-
-                        actualLabel.setStyle(
-                                        "-fx-background-color: #26364A;"
-                                                        + "-fx-background-radius: 4;"
-                                                        + "-fx-text-fill: white;"
-                                                        + "-fx-padding: 2;");
-
-                        actualLabel.setTooltip(new Tooltip(
-                                        title + "\n"
-                                                        + sessionStart + " → " + sessionEnd
-                                                        + "\nActual Focus · Pause excluded"));
-
+                        actualLabel.setStyle("-fx-background-color: #26364A;"
+                                        + "-fx-background-radius: 4;"
+                                        + "-fx-text-fill: white;"
+                                        + "-fx-padding: 2;");
+                        actualLabel.setTooltip(new Tooltip(title + "\n"
+                                        + session.startedAt().atZone(axisZone) + " → "
+                                        + session.endedAt().atZone(axisZone)
+                                        + "\nActual Focus · Pause excluded"));
                         canvas.getChildren().add(actualLabel);
                 }
 
                 updateLiveFocus();
-
                 updateNow();
-
                 if (autoFollow) {
                         Platform.runLater(this::scrollToNow);
                 }
         }
 
-        private void updateLiveFocus() {
-
-                WorkSession session = focusService == null
-                                ? null
-                                : focusService.activeSession();
-
-                if (session == null || displayedDate == null) {
-                        canvas.getChildren().remove(liveFocusLabel);
-                        return;
-                }
-
-                ZoneId zone = ZoneId.systemDefault();
-
-                LocalDateTime sessionStart = LocalDateTime.ofInstant(
-                                session.startedAt(), zone);
-
-                LocalDateTime now = LocalDateTime.ofInstant(
-                                Instant.now(), zone);
-
-                LocalDateTime dayStart = displayedDate.atStartOfDay();
-                LocalDateTime dayEnd = displayedDate.plusDays(1).atStartOfDay();
-
-                LocalDateTime from = sessionStart.isAfter(dayStart)
-                                ? sessionStart
-                                : dayStart;
-
-                LocalDateTime to = now.isBefore(dayEnd)
-                                ? now
-                                : dayEnd;
-
-                if (!to.isAfter(from)) {
-                        canvas.getChildren().remove(liveFocusLabel);
-                        return;
-                }
-
-                double y = Duration.between(
-                                dayStart, from).toMillis()
-                                / 3_600_000.0 * HOUR_HEIGHT;
-
-                double height = Duration.between(
-                                from, to).toMillis()
-                                / 3_600_000.0 * HOUR_HEIGHT;
-
+        private static String focusTitle(WorkSession session) {
                 String title = session.taskTitle();
-
                 if (title == null || title.isBlank()) {
                         title = "Unlinked Focus";
                 }
-
-                if (session.stepTitle() != null) {
+                if (session.stepTitle() != null && !session.stepTitle().isBlank()) {
                         title += " · " + session.stepTitle();
                 }
+                return title;
+        }
 
+        private void hideLiveFocus() {
+                canvas.getChildren().remove(liveFocusLabel);
+                liveFocusStatus.setVisible(false);
+                liveFocusStatus.setManaged(false);
+        }
+
+        private void updateLiveFocus() {
+                WorkSession session = focusService == null
+                                ? null
+                                : focusService.activeSession();
+                if (session == null || displayedDate == null || axisStart == null) {
+                        hideLiveFocus();
+                        return;
+                }
+                Instant instantNow = Instant.now();
+                Instant from = session.startedAt().isBefore(axisStart)
+                                ? axisStart
+                                : session.startedAt();
+                Instant to = instantNow.isAfter(axisEnd) ? axisEnd : instantNow;
+                if (!to.isAfter(from)) {
+                        hideLiveFocus();
+                        return;
+                }
+                double y = yForInstant(from);
+                double height = yForInstant(to) - y;
+                String title = focusTitle(session);
                 liveFocusLabel.setText("● REC · " + title);
+
+                long elapsed = Math.max(0, Duration.between(
+                                session.startedAt(), instantNow).getSeconds());
+                String elapsedText = String.format("%02d:%02d:%02d",
+                                elapsed / 3600, (elapsed % 3600) / 60, elapsed % 60);
+                liveFocusStatus.setText("● REC · " + title + " · " + elapsedText);
+                liveFocusStatus.setVisible(true);
+                liveFocusStatus.setManaged(true);
                 liveFocusLabel.setLayoutY(y);
                 liveFocusLabel.setPrefHeight(Math.max(6, height));
-
-                liveFocusTooltip.setText(
-                                title + "\nStarted: " + sessionStart
-                                                + "\nActual time through: " + now);
-
+                liveFocusTooltip.setText(title + "\nStarted: "
+                                + session.startedAt().atZone(axisZone)
+                                + "\nActual time through: " + instantNow.atZone(axisZone));
                 if (!canvas.getChildren().contains(liveFocusLabel)) {
-
-                        // Keep the red Now Line above the live focus bar.
                         int nowIndex = canvas.getChildren().indexOf(nowLine);
-
                         if (nowIndex >= 0) {
-                                canvas.getChildren().add(
-                                                nowIndex, liveFocusLabel);
+                                canvas.getChildren().add(nowIndex, liveFocusLabel);
                         } else {
                                 canvas.getChildren().add(liveFocusLabel);
                         }
@@ -480,47 +418,32 @@ public class TimelineView extends VBox {
         }
 
         private void updateNow() {
-
-                if (displayedDate == null) {
+                if (displayedDate == null || axisStart == null) {
                         return;
                 }
-
-                LocalDateTime now = LocalDateTime.now();
-
+                Instant nowInstant = Instant.now();
+                LocalDateTime now = LocalDateTime.ofInstant(nowInstant, axisZone);
                 canvas.getChildren().remove(nowLine);
-
                 currentTimeProgress.setVisible(false);
                 currentTimeProgress.setManaged(false);
-
                 if (!now.toLocalDate().equals(displayedDate)) {
                         currentStatus.setText("Viewing: " + displayedDate);
                         nextStatus.setText("");
                         return;
                 }
-
-                double minutes = now.getHour() * 60
-                                + now.getMinute()
-                                + now.getSecond() / 60.0;
-
-                double y = minutes / 60.0 * HOUR_HEIGHT;
-
+                double y = yForInstant(nowInstant);
                 nowLine.setStartX(56);
                 nowLine.setStartY(y);
                 nowLine.setEndY(y);
                 nowLine.setStroke(Color.web("#893030"));
                 nowLine.setStrokeWidth(2);
-
                 canvas.getChildren().add(nowLine);
 
                 TimeBlock current = null;
                 TimeBlock next = null;
-
                 for (TimeBlock block : displayedBlocks) {
-
                         if (!now.isBefore(block.start()) && now.isBefore(block.end())) {
-
                                 current = block;
-
                         } else if (block.start().isAfter(now)
                                         && (next == null || block.start().isBefore(next.start()))) {
                                 next = block;
@@ -529,77 +452,43 @@ public class TimelineView extends VBox {
                 if (current == null) {
                         currentStatus.setText("Current: Unscheduled");
                 } else {
-
-                        double elapsed = Duration.between(
-                                        current.start(), now).toSeconds();
-
-                        double total = Duration.between(
-                                        current.start(), current.end()).toSeconds();
-                        int percent = (int) Math.round(
-                                        100.0 * elapsed / total);
-
-                        currentTimeProgress.setProgress(
-                                        Math.max(0, Math.min(1, elapsed / total)));
-
-                        currentTimeProgress.setVisible(true);
-                        currentTimeProgress.setManaged(true);
-
-                        long remainingMinutes = (long) Math.ceil(
-                                        Duration.between(now, current.end()).toSeconds() / 60.0);
-
-                        currentStatus.setText(
-                                        "Current: " + current.title()
-                                                        + " | " + percent + "% elapsed"
-                                                        + " | " + remainingMinutes + " min left");
+                        double elapsed = Duration.between(current.start(), now).toSeconds();
+                        double total = Duration.between(current.start(), current.end()).toSeconds();
+                        if (total > 0) {
+                                int percent = (int) Math.round(100.0 * elapsed / total);
+                                currentTimeProgress.setProgress(Math.max(0, Math.min(1, elapsed / total)));
+                                currentTimeProgress.setVisible(true);
+                                currentTimeProgress.setManaged(true);
+                                long remainingMinutes = (long) Math.ceil(
+                                                Duration.between(now, current.end()).toSeconds() / 60.0);
+                                currentStatus.setText("Current: " + current.title()
+                                                + " | " + percent + "% elapsed"
+                                                + " | " + remainingMinutes + " min left");
+                        }
                 }
-
-                if (next == null) {
-                        nextStatus.setText("Next: No further activities");
-                } else {
-                        nextStatus.setText(
-                                        "Next: " + next.title() + " | " + next.start().toLocalTime());
-                }
-
+                nextStatus.setText(next == null ? "Next: No further activities"
+                                : "Next: " + next.title() + " | " + next.start().toLocalTime());
                 if (autoFollow) {
                         scrollToNow();
                 }
         }
 
         private void scrollToNow() {
-
-                if (displayedDate == null
+                if (displayedDate == null || axisStart == null
                                 || !displayedDate.equals(LocalDate.now())) {
                         return;
                 }
-
                 double viewportHeight = scrollPane.getViewportBounds().getHeight();
-
                 if (viewportHeight <= 0) {
                         return;
                 }
-
-                double nowMinutes = java.time.LocalTime.now().toSecondOfDay() / 60.0;
-
-                double nowY = nowMinutes / 60.0 * HOUR_HEIGHT;
-
-                double contentHeight = Math.max(
-                                canvas.getHeight(),
-                                canvas.getPrefHeight());
-
+                double nowY = yForInstant(Instant.now());
+                double contentHeight = Math.max(canvas.getHeight(), canvas.getPrefHeight());
                 double scrollableHeight = contentHeight - viewportHeight;
-
                 if (scrollableHeight <= 0) {
                         return;
                 }
-
-                // Position NOW roughly 45% down the viewport.
                 double targetOffset = nowY - viewportHeight * 0.45;
-
-                double position = Math.max(
-                                0,
-                                Math.min(1, targetOffset / scrollableHeight));
-
-                scrollPane.setVvalue(position);
+                scrollPane.setVvalue(Math.max(0, Math.min(1, targetOffset / scrollableHeight)));
         }
-
 }
