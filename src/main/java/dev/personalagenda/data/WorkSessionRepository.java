@@ -42,6 +42,30 @@ public class WorkSessionRepository {
                                 Instant.now(),
                                 null);
 
+                return insertSession(session);
+        }
+
+        public WorkSession startUnlinked(String title)
+                        throws SQLException {
+
+                if (title == null || title.isBlank()) {
+                        throw new IllegalArgumentException(
+                                        "Enter a title for the unlinked Focus Session.");
+                }
+
+                WorkSession session = new WorkSession(
+                                UUID.randomUUID().toString(),
+                                null,
+                                null,
+                                title.trim(),
+                                null,
+                                Instant.now(),
+                                null);
+
+                return insertSession(session);
+        }
+
+        private WorkSession insertSession(WorkSession session) throws SQLException {
                 String sql = """
                                 INSERT INTO work_sessions
                                 (id, task_id, step_id, task_title, step_title,

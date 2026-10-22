@@ -47,6 +47,7 @@ import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Separator;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
+import javafx.scene.control.TextField;
 import javafx.scene.control.TextInputDialog;
 import javafx.scene.control.TitledPane;
 import javafx.scene.control.ButtonBar;
@@ -91,6 +92,10 @@ public class FloatingWidget {
 
         // Focus selection.
         private final ComboBox<Task> focusTaskChoice = new ComboBox<>();
+
+        private final CheckBox unlinkedFocusMode = new CheckBox("Focus without Task");
+
+        private final TextField unlinkedFocusTitle = new TextField();
         private final ComboBox<TaskStep> focusStepChoice = new ComboBox<>();
         private final Button autoFocusButton = new Button("Auto");
         private final VBox taskControls = new VBox(6);
@@ -257,6 +262,19 @@ public class FloatingWidget {
                 scheduleFocusLabel.managedProperty().bind(
                                 scheduleFocusLabel.visibleProperty());
 
+                unlinkedFocusTitle.setPromptText(
+                                "Activity title (e.g. Unexpected meeting)");
+
+                unlinkedFocusTitle.setMaxWidth(Double.MAX_VALUE);
+
+                unlinkedFocusMode.setOnAction(event -> refresh());
+
+                HBox unlinkedFocusRow = new HBox(
+                                8, unlinkedFocusMode, unlinkedFocusTitle);
+
+                unlinkedFocusRow.setAlignment(Pos.CENTER_LEFT);
+                HBox.setHgrow(unlinkedFocusTitle, Priority.ALWAYS);
+
                 sessionTimerLabel.setStyle("-fx-font-size: 23px; -fx-font-weight: bold;");
                 sessionStatusLabel.setWrapText(true);
                 todayActualLabel.setStyle("-fx-font-size: 13px; -fx-font-weight: bold;");
@@ -287,10 +305,16 @@ public class FloatingWidget {
                 HBox.setHgrow(focusStepChoice, Priority.ALWAYS);
                 wholeTaskButton.setMinWidth(Region.USE_PREF_SIZE);
 
-                VBox sessionControls = new VBox(6,
-                                new Label("Focus Step"), stepPicker,
-                                sessionTimerLabel, sessionButtons,
-                                sessionStatusLabel, todayActualLabel, recentSessionsPane);
+                VBox sessionControls = new VBox(
+                                6,
+                                new Label("Focus Step"),
+                                stepPicker,
+                                unlinkedFocusRow,
+                                sessionTimerLabel,
+                                sessionButtons,
+                                sessionStatusLabel,
+                                todayActualLabel,
+                                recentSessionsPane);
 
                 taskBar.setColor(Color.web("#887ABD"));
                 ScrollPane taskScroll = new ScrollPane(taskControls);
@@ -712,6 +736,10 @@ public class FloatingWidget {
                                         .findFirst().orElse(null);
                 }
 
+                if (unlinkedFocusMode.isSelected()) {
+                        selected = null;
+                }
+
                 updatingFocusChoice = true;
                 try {
                         focusTaskChoice.getItems().setAll(allTasks);
@@ -1014,6 +1042,27 @@ public class FloatingWidget {
         }
 
         private void refreshClockFocus() throws SQLException {
+                WorkSession unlinkedSession = focusService.activeSession() != null
+                                ? focusService.activeSession()
+                                : focusService.pausedSession();
+
+                if (unlinkedSession != null
+                                && unlinkedSession.taskId() == null) {
+
+                        clockFocusLabel.setText(unlinkedSession.taskTitle());
+                        clockFocusCategory.setText("UNLINKED FOCUS · ACTUAL ONLY");
+
+                        clockFocusCard.setStyle(
+                                        "-fx-background-color: #E8EDF5;"
+                                                        + "-fx-background-radius: 10;"
+                                                        + "-fx-padding: 10;");
+
+                        clockFocusLabel.setStyle("-fx-text-fill: #26364A;");
+                        clockFocusCategory.setStyle("-fx-text-fill: #526478;");
+
+                        return;
+                }
+
                 if (currentFocusedTask == null) {
                         clockFocusLabel.setText("No focus task");
                         clockFocusCategory.setText("Choose a task in Focus");
@@ -1049,19 +1098,39 @@ public class FloatingWidget {
                 Task task = currentFocusedTask;
                 TaskStep step = focusStepChoice.getValue();
 
-                if (task == null) {
+                boolean unlinked = unlinkedFocusMode.isSelected();
+
+                if (focusService.state() == FocusSessionService.State.IDLE
+                                && !unlinked && task == null) {
+
                         sessionStatusLabel.setText("Choose a task first.");
                         return;
                 }
 
                 try {
+                        WorkSession session;
+
                         if (focusService.state() == FocusSessionService.State.PAUSED) {
-                                focusService.resume(task, step);
+
+                                if (focusService.pausedSession().taskId() == null) {
+                                        session = focusService.resumeUnlinked();
+                                } else {
+                                        session = focusService.resume(task, step);
+                                }
+
+                        } else if (unlinked) {
+
+                                session = focusService.startUnlinked(
+                                                unlinkedFocusTitle.getText());
+
                         } else {
-                                focusService.start(task, step);
+
+                                session = focusService.start(task, step);
                         }
 
-                        sessionStatusLabel.setText("Recording actual work.");
+                        sessionStatusLabel.setText(
+                                        "Recording: " + session.taskTitle());
+
                         refresh();
 
                 } catch (SQLException | IllegalArgumentException
@@ -1146,16 +1215,35 @@ public class FloatingWidget {
                 sessionStartButton.setText(paused ? "Resume" : "Start");
 
                 sessionStartButton.setDisable(
-                                recording || unresolvedSession || currentFocusedTask == null);
+                                recording
+                                                || unresolvedSession
+                                                || (!paused
+                                                                && !unlinkedFocusMode.isSelected()
+                                                                && currentFocusedTask == null));
 
                 sessionPauseButton.setDisable(!recording);
                 sessionStopButton.setDisable(!locked);
 
-                focusTaskChoice.setDisable(locked);
-                focusStepChoice.setDisable(locked || currentFocusedTask == null);
-                wholeTaskButton.setDisable(locked || currentFocusedTask == null);
-                autoFocusButton.setDisable(locked);
+                unlinkedFocusMode.setDisable(locked);
 
+                unlinkedFocusTitle.setDisable(
+                                locked || !unlinkedFocusMode.isSelected());
+
+                focusTaskChoice.setDisable(
+                                locked || unlinkedFocusMode.isSelected());
+
+                focusStepChoice.setDisable(
+                                locked
+                                                || unlinkedFocusMode.isSelected()
+                                                || currentFocusedTask == null);
+
+                wholeTaskButton.setDisable(
+                                locked
+                                                || unlinkedFocusMode.isSelected()
+                                                || currentFocusedTask == null);
+
+                autoFocusButton.setDisable(
+                                locked || unlinkedFocusMode.isSelected());
                 recoverSessionButton.setVisible(unresolvedSession);
 
                 updateActualTodayLabel();

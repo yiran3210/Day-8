@@ -61,6 +61,22 @@ public final class FocusSessionService {
         return session;
     }
 
+    public WorkSession startUnlinked(String title)
+            throws SQLException {
+
+        if (state() != State.IDLE) {
+            throw new IllegalStateException(
+                    "Finish the current focus process first.");
+        }
+
+        WorkSession session = repository.startUnlinked(title);
+
+        activeSession = session;
+        accumulated = Duration.ZERO;
+
+        return session;
+    }
+
     // Pause the running segment.
     public void pause() throws SQLException {
 
@@ -105,6 +121,23 @@ public final class FocusSessionService {
         }
 
         WorkSession session = repository.start(task, step);
+
+        activeSession = session;
+        pausedSession = null;
+
+        return session;
+    }
+
+    public WorkSession resumeUnlinked()
+            throws SQLException {
+
+        if (state() != State.PAUSED
+                || pausedSession.taskId() != null) {
+            throw new IllegalStateException(
+                    "No paused unlinked Focus Session to resume.");
+        }
+
+        WorkSession session = repository.startUnlinked(pausedSession.taskTitle());
 
         activeSession = session;
         pausedSession = null;
