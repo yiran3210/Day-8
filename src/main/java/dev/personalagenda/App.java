@@ -142,6 +142,11 @@ public class App extends Application {
 
         Button addButton = new Button("Add");
 
+        TitledPane quickAddPane = new TitledPane("+ Quick Add", null);
+        quickAddPane.setExpanded(true);
+        quickAddPane.setAnimated(false);
+        quickAddPane.setMaxWidth(Double.MAX_VALUE);
+
         Button quickFocusButton = new Button("Quick Add & Focus");
         quickFocusButton.setMinWidth(Region.USE_PREF_SIZE);
 
@@ -219,6 +224,10 @@ public class App extends Application {
             taskInput.clear();
 
             updateProgress(tasks, progressLabel, progressBar, viewFilter.getValue());
+
+            quickAddPane.setText("+ Quick Add · Saved");
+            quickAddPane.setExpanded(false);
+
         });
 
         taskInput.setOnAction(event -> addButton.fire());
@@ -992,10 +1001,7 @@ public class App extends Application {
         categoryManager.setAnimated(false);
         categoryManager.setMaxWidth(Double.MAX_VALUE);
 
-        Label quickAddTitle = new Label("Quick Add");
         Label taskListTitle = new Label("Task List");
-
-        quickAddTitle.getStyleClass().add("section-heading");
         taskListTitle.getStyleClass().add("section-heading");
 
         HBox quickFocusRow = new HBox(quickFocusButton);
@@ -1003,12 +1009,20 @@ public class App extends Application {
 
         VBox taskComposer = new VBox(
                 10,
-                quickAddTitle,
                 inputRow,
                 dateRow,
                 quickFocusRow);
 
         taskComposer.getStyleClass().add("task-composer");
+
+        quickAddPane.setContent(taskComposer);
+
+        quickAddPane.expandedProperty().addListener(
+                (obs, wasExpanded, expanded) -> {
+                    if (expanded) {
+                        quickAddPane.setText("+ Quick Add");
+                    }
+                });
 
         Region toolbarSpacer = new Region();
 
@@ -1023,7 +1037,7 @@ public class App extends Application {
 
         VBox taskPanel = new VBox(
                 16,
-                taskComposer,
+                quickAddPane,
                 categoryManager,
                 taskToolbar,
                 taskList);
@@ -1417,6 +1431,11 @@ public class App extends Application {
 
                 // 6. Start Focus using the existing shared service.
                 focusRequest.accept(quickTask, null);
+
+                if (focusService.state() == FocusSessionService.State.RUNNING) {
+                    quickAddPane.setText("+ Quick Add · Focus started");
+                    quickAddPane.setExpanded(false);
+                }
 
             } catch (SQLException ex) {
                 showFocusMessage(

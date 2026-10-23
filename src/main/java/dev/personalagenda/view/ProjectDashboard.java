@@ -30,6 +30,9 @@ public class ProjectDashboard extends VBox {
         private final Map<String, String> categoryColors;
 
         private final VBox projectCards = new VBox(16);
+
+        private final Set<String> expandedAssignedTaskProjectIds = new HashSet<>();
+
         private final Label status = new Label();
         private final ComboBox<String> categoryInput = new ComboBox<>();
 
@@ -311,8 +314,18 @@ public class ProjectDashboard extends VBox {
                                                 "Assigned Tasks (" + assignedCount + ")",
                                                 taskManagement);
 
-                                tasksPane.setExpanded(false);
+                                tasksPane.setExpanded(
+                                                expandedAssignedTaskProjectIds.contains(project.id()));
                                 tasksPane.setAnimated(false);
+
+                                tasksPane.expandedProperty().addListener(
+                                                (obs, wasExpanded, expanded) -> {
+                                                        if (expanded) {
+                                                                expandedAssignedTaskProjectIds.add(project.id());
+                                                        } else {
+                                                                expandedAssignedTaskProjectIds.remove(project.id());
+                                                        }
+                                                });
 
                                 Button editProjectButton = new Button("Edit");
 
@@ -444,7 +457,9 @@ public class ProjectDashboard extends VBox {
                                         }
 
                                         try {
+
                                                 projects.delete(project.id());
+                                                expandedAssignedTaskProjectIds.remove(project.id());
                                                 refresh();
 
                                         } catch (SQLException ex) {
