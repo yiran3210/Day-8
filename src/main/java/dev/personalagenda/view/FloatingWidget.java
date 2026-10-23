@@ -37,6 +37,7 @@ import javafx.animation.Timeline;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.geometry.Rectangle2D;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
@@ -54,11 +55,13 @@ import javafx.scene.control.Tooltip;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.stage.Modality;
+import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 import javafx.stage.WindowEvent;
@@ -158,6 +161,10 @@ public class FloatingWidget {
         private final VBox root;
         private Runnable resizeWidgetAction = () -> {
         };
+
+        private boolean userResizedMini = false;
+        private boolean applyingMiniSize = false;
+        private boolean miniSizeTrackingActive = false;
 
         public FloatingWidget(
                         Stage mainWindow,
@@ -301,9 +308,15 @@ public class FloatingWidget {
                 recoverSessionButton.managedProperty().bind(
                                 recoverSessionButton.visibleProperty());
 
-                HBox sessionButtons = new HBox(6, sessionStartButton,
-                                sessionPauseButton, sessionStopButton, recoverSessionButton);
+                FlowPane sessionButtons = new FlowPane(
+                                6, 6,
+                                sessionStartButton,
+                                sessionPauseButton,
+                                sessionStopButton,
+                                recoverSessionButton);
+
                 sessionButtons.setAlignment(Pos.CENTER_LEFT);
+
                 for (Button button : new Button[] { sessionStartButton, sessionPauseButton,
                                 sessionStopButton, recoverSessionButton }) {
                         button.setMinWidth(Region.USE_PREF_SIZE);
@@ -440,7 +453,10 @@ public class FloatingWidget {
                 clockFocusCard.setMaxWidth(120);
                 clockFocusCard.getStyleClass().add("clock-focus-card");
                 VBox clockInfo = new VBox(12, clockTimeLabel, clockFocusCard);
-                HBox clockHero = new HBox(10, clockFace, clockInfo);
+
+                FlowPane clockHero = new FlowPane(
+                                10, 10, clockFace, clockInfo);
+
                 clockHero.setAlignment(Pos.CENTER_LEFT);
 
                 HBox projectPicker = new HBox(6, clockProjectChoice, autoProjectButton);
@@ -463,13 +479,29 @@ public class FloatingWidget {
                 clockContent.setAlignment(Pos.TOP_CENTER);
                 clockContent.getStyleClass().add("mini-card");
 
-                Tab focusTab = new Tab("Focus", focusContent);
-                Tab clockTab = new Tab("Clock", clockContent);
+                ScrollPane focusViewport = new ScrollPane(focusContent);
+                focusViewport.setFitToWidth(true);
+                focusViewport.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+                focusViewport.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+                focusViewport.setMinHeight(0);
+                focusViewport.setPannable(true);
+
+                ScrollPane clockViewport = new ScrollPane(clockContent);
+                clockViewport.setFitToWidth(true);
+                clockViewport.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+                clockViewport.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+                clockViewport.setMinHeight(0);
+                clockViewport.setPannable(true);
+
+                Tab focusTab = new Tab("Focus", focusViewport);
+                Tab clockTab = new Tab("Clock", clockViewport);
+
                 focusTab.setClosable(false);
                 clockTab.setClosable(false);
                 tabs = new TabPane(focusTab, clockTab);
-                tabs.setMinHeight(Region.USE_PREF_SIZE);
-                tabs.setMaxHeight(Region.USE_PREF_SIZE);
+                tabs.setMinHeight(0);
+                tabs.setMaxHeight(Double.MAX_VALUE);
+                VBox.setVgrow(tabs, Priority.ALWAYS);
 
                 Button openButton = new Button("Open Day 8");
                 openButton.setOnAction(e -> {
@@ -479,7 +511,18 @@ public class FloatingWidget {
                 });
                 Button refreshButton = new Button("↻");
                 refreshButton.setOnAction(e -> refresh());
-                HBox footer = new HBox(8, openButton, refreshButton);
+                Button fitButton = new Button("Fit");
+
+                fitButton.setTooltip(new javafx.scene.control.Tooltip(
+                                "Restore automatic Mini size"));
+
+                fitButton.setOnAction(event -> {
+                        userResizedMini = false;
+                        requestResize();
+                });
+
+                HBox footer = new HBox(
+                                8, openButton, refreshButton, fitButton);
 
                 root = new VBox(7, tabs, errorLabel, footer);
                 root.setPadding(new Insets(10));
@@ -495,33 +538,45 @@ public class FloatingWidget {
                 }
                 window.setScene(scene);
 
+                window.widthProperty().addListener(
+                                (obs, oldWidth, newWidth) -> {
+                                        if (miniSizeTrackingActive
+                                                        && !applyingMiniSize
+                                                        && Math.abs(newWidth.doubleValue()
+                                                                        - oldWidth.doubleValue()) > 2) {
+                                                userResizedMini = true;
+                                        }
+                                });
+
+                window.heightProperty().addListener(
+                                (obs, oldHeight, newHeight) -> {
+                                        if (miniSizeTrackingActive
+                                                        && !applyingMiniSize
+                                                        && Math.abs(newHeight.doubleValue()
+                                                                        - oldHeight.doubleValue()) > 2) {
+                                                userResizedMini = true;
+                                        }
+                                });
+
                 // Compute the height of the selected tab, rather than fixing a taller widget.
-                resizeWidgetAction = () -> {
-                        if (!window.isShowing())
-                                return;
-                        root.applyCss();
-                        Region content = (Region) tabs.getSelectionModel()
-                                        .getSelectedItem().getContent();
-                        double contentWidth = Math.max(300, tabs.getWidth() - 24);
-                        double contentHeight = content.prefHeight(contentWidth);
-                        double headerHeight = 42;
-                        javafx.scene.Node header = tabs.lookup(".tab-header-area");
-                        if (header instanceof Region region) {
-                                headerHeight = Math.max(36, region.prefHeight(-1));
-                        }
-                        tabs.setPrefHeight(contentHeight + headerHeight + 4);
-                        root.requestLayout();
-                        root.applyCss();
-                        root.layout();
-                        window.sizeToScene();
-                };
+
+                resizeWidgetAction = this::resizeMiniToContent;
+
                 tabs.getSelectionModel().selectedItemProperty().addListener(
                                 (obs, previous, next) -> requestResize());
                 recentSessionsPane.expandedProperty().addListener(
                                 (obs, before, after) -> requestResize());
                 focusDetailsPane.expandedProperty().addListener(
                                 (obs, before, after) -> requestResize());
-                window.setOnShown(e -> requestResize());
+
+                window.setOnShown(e -> {
+                        miniSizeTrackingActive = false;
+
+                        requestResize();
+
+                        Platform.runLater(
+                                        () -> miniSizeTrackingActive = true);
+                });
 
                 dataClock.setCycleCount(Timeline.INDEFINITE);
                 sessionTicker.setCycleCount(Timeline.INDEFINITE);
@@ -649,6 +704,121 @@ public class FloatingWidget {
 
         private boolean focusIsLocked() {
                 return focusService.state() != FocusSessionService.State.IDLE;
+        }
+
+        private Rectangle2D miniVisualBounds() {
+                var screens = Screen.getScreensForRectangle(
+                                window.getX(),
+                                window.getY(),
+                                Math.max(1, window.getWidth()),
+                                Math.max(1, window.getHeight()));
+
+                Screen screen = screens.isEmpty()
+                                ? Screen.getPrimary()
+                                : screens.get(0);
+
+                return screen.getVisualBounds();
+        }
+
+        private void keepMiniOnScreen(Rectangle2D bounds) {
+                if (window.getWidth() > bounds.getWidth()) {
+                        window.setWidth(bounds.getWidth());
+                }
+
+                if (window.getHeight() > bounds.getHeight()) {
+                        window.setHeight(bounds.getHeight());
+                }
+
+                double x = Double.isFinite(window.getX())
+                                ? window.getX()
+                                : bounds.getMinX();
+                double y = Double.isFinite(window.getY())
+                                ? window.getY()
+                                : bounds.getMinY();
+
+                window.setX(Math.max(
+                                bounds.getMinX(),
+                                Math.min(x, bounds.getMaxX() - window.getWidth())));
+
+                window.setY(Math.max(
+                                bounds.getMinY(),
+                                Math.min(y, bounds.getMaxY() - window.getHeight())));
+        }
+
+        private void resizeMiniToContent() {
+                if (!window.isShowing()) {
+                        return;
+                }
+
+                Rectangle2D bounds = miniVisualBounds();
+
+                applyingMiniSize = true;
+
+                try {
+                        if (!userResizedMini) {
+                                boolean focusSelected = tabs.getSelectionModel().getSelectedIndex() == 0;
+
+                                double preferredWidth = focusSelected ? 360 : 390;
+
+                                double chromeWidth = Math.max(
+                                                0, window.getWidth() - window.getScene().getWidth());
+
+                                double chromeHeight = Math.max(
+                                                0, window.getHeight() - window.getScene().getHeight());
+
+                                double targetWidth = Math.max(
+                                                window.getMinWidth(),
+                                                Math.min(preferredWidth, bounds.getWidth()));
+
+                                window.setWidth(targetWidth);
+
+                                root.applyCss();
+
+                                ScrollPane viewport = (ScrollPane) tabs
+                                                .getSelectionModel()
+                                                .getSelectedItem()
+                                                .getContent();
+
+                                Region content = (Region) viewport.getContent();
+
+                                double sceneWidth = Math.max(
+                                                1, targetWidth - chromeWidth);
+
+                                double contentWidth = Math.max(
+                                                1, sceneWidth - 44);
+
+                                double contentHeight = content.prefHeight(contentWidth);
+
+                                double headerHeight = 42;
+                                javafx.scene.Node header = tabs.lookup(".tab-header-area");
+
+                                if (header instanceof Region region) {
+                                        headerHeight = Math.max(
+                                                        36, region.prefHeight(-1));
+                                }
+
+                                tabs.setPrefHeight(
+                                                contentHeight + headerHeight + 8);
+
+                                root.requestLayout();
+                                root.applyCss();
+                                root.layout();
+
+                                double targetHeight = root.prefHeight(sceneWidth)
+                                                + chromeHeight + 8;
+
+                                window.setHeight(Math.max(
+                                                window.getMinHeight(),
+                                                Math.min(targetHeight, bounds.getHeight())));
+                        }
+
+                        // In manual mode, preserve the chosen size.
+                        // Only prevent the widget from remaining off-screen.
+                        keepMiniOnScreen(bounds);
+
+                } finally {
+                        applyingMiniSize = false;
+                }
         }
 
         private void requestResize() {
