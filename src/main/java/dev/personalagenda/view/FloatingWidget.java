@@ -608,13 +608,7 @@ public class FloatingWidget {
         }
 
         private void installWindowIcons() {
-                // Resource-only icons: no hard dependency on another utility class.
-                for (int size : new int[] { 16, 32, 64, 256 }) {
-                        URL image = getClass().getResource("/icons/agenda-icon-" + size + ".png");
-                        if (image != null) {
-                                window.getIcons().add(new javafx.scene.image.Image(image.toExternalForm()));
-                        }
-                }
+                AppIcons.apply(window);
         }
 
         private void handleMainWindowClose(WindowEvent event) {

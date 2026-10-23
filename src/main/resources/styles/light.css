@@ -640,3 +640,60 @@
 .insights-chart .chart-plot-background {
     -fx-background-color: #FFFFFF;
 }
+
+
+/* ===== P6-7.5 Insights Visual Polish ===== */
+
+/* Shared chart surface and axes */
+.insights-chart .chart-plot-background {
+    -fx-background-color: #FFFFFF;
+}
+
+.insights-chart .axis {
+    -fx-tick-label-fill: #64748B;
+    -fx-tick-label-font-size: 11px;
+}
+
+.insights-chart .axis-tick-mark,
+.insights-chart .axis-minor-tick-mark {
+    -fx-stroke: #A8B5C5;
+}
+
+.insights-chart .chart-horizontal-grid-lines,
+.insights-chart .chart-vertical-grid-lines {
+    -fx-stroke: #E8EDF4;
+    -fx-stroke-width: 0.8px;
+    -fx-stroke-dash-array: 3 6;
+}
+
+/* Actual hours: teal, solid line, round markers */
+.actual-hours-chart .chart-series-line {
+    -fx-stroke: #167E8C;
+    -fx-stroke-width: 2.6px;
+    -fx-stroke-line-cap: round;
+    -fx-stroke-line-join: round;
+    -fx-stroke-dash-array: none;
+}
+
+.actual-hours-chart .chart-line-symbol {
+    -fx-background-color: #167E8C, #FFFFFF;
+    -fx-background-insets: 0, 2;
+    -fx-background-radius: 10px;
+    -fx-padding: 4px;
+}
+
+/* Observed completion: violet, dashed, square markers */
+.completion-chart .chart-series-line {
+    -fx-stroke: #8063B5;
+    -fx-stroke-width: 2.4px;
+    -fx-stroke-line-cap: round;
+    -fx-stroke-line-join: round;
+    -fx-stroke-dash-array: 6 4;
+}
+
+.completion-chart .chart-line-symbol {
+    -fx-background-color: #8063B5, #FFFFFF;
+    -fx-background-insets: 0, 2;
+    -fx-background-radius: 2px;
+    -fx-padding: 4px;
+}

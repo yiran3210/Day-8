@@ -11,7 +11,7 @@ public final class AppIcons {
 
     public static void apply(Stage stage) {
 
-        int[] sizes = { 16, 32, 64, 256 };
+        int[] sizes = { 16, 32, 64, 128, 256, 512 };
 
         for (int size : sizes) {
 
