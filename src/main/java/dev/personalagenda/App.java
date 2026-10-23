@@ -11,6 +11,8 @@ import dev.personalagenda.data.TimeBlockRepository;
 import dev.personalagenda.data.CategoryRepository;
 import dev.personalagenda.data.WorkSessionRepository;
 import dev.personalagenda.data.DailyPlanRepository;
+import dev.personalagenda.data.UiSortOrderRepository;
+import dev.personalagenda.view.UiSortControls;
 import dev.personalagenda.view.TimelineView;
 import dev.personalagenda.view.MinuteSpinnerSupport;
 import dev.personalagenda.view.CorrectPlanDialog;
@@ -88,6 +90,7 @@ public class App extends Application {
 
     private final TaskStepRepository taskStepRepository = new TaskStepRepository();
     private final DailyPlanRepository dailyPlanRepository = new DailyPlanRepository();
+    private final UiSortOrderRepository uiSort = new UiSortOrderRepository();
 
     private final Label dailyProgressDetails = new Label();
 
@@ -174,8 +177,38 @@ public class App extends Application {
 
         refreshTaskList(tasks, taskList, progressLabel, progressBar, repository, viewFilter.getValue());
 
+        Button resetTaskOrder = new Button("Default Order");
+
+        resetTaskOrder.setOnAction(event -> {
+            String scope = taskOrderScope(viewFilter.getValue());
+
+            if (scope == null) {
+                return;
+            }
+
+            try {
+                uiSort.reset(scope);
+                refreshTaskList(
+                        tasks, taskList,
+                        progressLabel, progressBar,
+                        repository, viewFilter.getValue());
+
+            } catch (SQLException ex) {
+                Alert alert = new Alert(Alert.AlertType.ERROR);
+                alert.setHeaderText("Unable to reset Task order");
+                alert.setContentText(ex.getMessage());
+                alert.showAndWait();
+            }
+        });
+
         viewFilter.setOnAction(event -> {
-            refreshTaskList(tasks, taskList, progressLabel, progressBar, repository, viewFilter.getValue());
+            resetTaskOrder.setDisable(
+                    taskOrderScope(viewFilter.getValue()) == null);
+
+            refreshTaskList(
+                    tasks, taskList,
+                    progressLabel, progressBar,
+                    repository, viewFilter.getValue());
         });
 
         addButton.setOnAction(event -> {
@@ -294,6 +327,31 @@ public class App extends Application {
         Label scheduleTitle = new Label("Day Plan");
 
         HBox scheduleHeader = new HBox(12, scheduleTitle, scheduleDateInput);
+
+        Button resetDayPlanOrder = new Button("Default Order");
+
+        resetDayPlanOrder.setOnAction(event -> {
+            LocalDate date = scheduleDateInput.getValue();
+
+            if (date == null) {
+                return;
+            }
+
+            try {
+                uiSort.reset("dayplan:" + date);
+                refreshSchedule(
+                        blockRepository, timeline,
+                        scheduledBlocks, date);
+
+            } catch (SQLException ex) {
+                Alert alert = new Alert(Alert.AlertType.ERROR);
+                alert.setHeaderText("Unable to reset Day Plan order");
+                alert.setContentText(ex.getMessage());
+                alert.showAndWait();
+            }
+        });
+
+        scheduleHeader.getChildren().add(resetDayPlanOrder);
 
         Region scheduleHeaderSpacer = new Region();
 
@@ -1027,7 +1085,8 @@ public class App extends Application {
         Region toolbarSpacer = new Region();
 
         HBox taskToolbar = new HBox(
-                12, taskListTitle, toolbarSpacer, viewFilter);
+                12, taskListTitle, toolbarSpacer,
+                resetTaskOrder, viewFilter);
 
         HBox.setHgrow(
                 toolbarSpacer, Priority.ALWAYS);
@@ -1671,7 +1730,12 @@ public class App extends Application {
 
         blockList.getChildren().clear();
 
-        for (TimeBlock block : blocks) {
+        List<TimeBlock> displayBlocks = uiSort.ordered(
+                "dayplan:" + date,
+                blocks,
+                TimeBlock::id);
+
+        for (TimeBlock block : displayBlocks) {
 
             String timeText = block.start().toLocalTime()
                     + "–"
@@ -1964,8 +2028,46 @@ public class App extends Application {
             });
 
             VBox entry = new VBox(4, row, editor);
+
+            HBox sortControls = UiSortControls.attach(
+                    "dayplan:" + date,
+                    block.id(),
+                    entry,
+                    blockList,
+                    () -> {
+                        try {
+                            refreshSchedule(
+                                    repository, timeline, blockList, date);
+                        } catch (SQLException ex) {
+                            Alert alert = new Alert(Alert.AlertType.ERROR);
+                            alert.setHeaderText(
+                                    "Unable to refresh Activity order");
+                            alert.setContentText(ex.getMessage());
+                            alert.showAndWait();
+                        }
+                    },
+                    message -> {
+                        Alert alert = new Alert(Alert.AlertType.ERROR);
+                        alert.setHeaderText("Activity sorting failed");
+                        alert.setContentText(message);
+                        alert.showAndWait();
+                    });
+
+            row.getChildren().add(0, sortControls);
             blockList.getChildren().add(entry);
+
         }
+    }
+
+    private String taskOrderScope(String filter) {
+        LocalDate today = LocalDate.now();
+
+        return switch (filter) {
+            case "Today" -> "task:" + today;
+            case "Tomorrow" -> "task:" + today.plusDays(1);
+            case "Backlog" -> "task:backlog";
+            default -> null;
+        };
     }
 
     private boolean matchesFilter(Task task, String filter) {
@@ -1988,19 +2090,43 @@ public class App extends Application {
             List<Task> tasks, VBox taskList, Label progressLabel, ProgressBar progressBar, TaskRepository repository,
             String filter) {
 
-        taskList.getChildren().clear();
+        {
+            taskList.getChildren().clear();
 
-        for (Task task : tasks) {
-            if (!matchesFilter(task, filter)) {
-                continue;
+            List<Task> visibleTasks = tasks.stream()
+                    .filter(task -> matchesFilter(task, filter))
+                    .toList();
+
+            String scope = taskOrderScope(filter);
+
+            if (scope != null) {
+                try {
+                    visibleTasks = uiSort.ordered(
+                            scope,
+                            visibleTasks,
+                            Task::getId);
+
+                } catch (SQLException ex) {
+                    Alert alert = new Alert(Alert.AlertType.ERROR);
+                    alert.setHeaderText("Unable to load Task order");
+                    alert.setContentText(ex.getMessage());
+                    alert.showAndWait();
+                }
             }
 
-            VBox taskEntry = createTaskRow(task, tasks, taskList, progressLabel, progressBar, repository, filter);
+            for (Task task : visibleTasks) {
+                VBox taskEntry = createTaskRow(
+                        task, tasks, taskList,
+                        progressLabel, progressBar,
+                        repository, filter);
 
-            taskList.getChildren().add(taskEntry);
+                taskList.getChildren().add(taskEntry);
+            }
+
+            updateProgress(
+                    tasks, progressLabel, progressBar, filter);
         }
 
-        updateProgress(tasks, progressLabel, progressBar, filter);
     }
 
     private boolean allowDeleteFocusTarget(
@@ -2325,6 +2451,28 @@ public class App extends Application {
 
         VBox taskEntry = new VBox(
                 6, taskRow, taskEditor, stepsView);
+
+        String sortScope = taskOrderScope(filter);
+
+        if (sortScope != null) {
+            HBox sortControls = UiSortControls.attach(
+                    sortScope,
+                    task.getId(),
+                    taskEntry,
+                    taskList,
+                    () -> refreshTaskList(
+                            tasks, taskList,
+                            progressLabel, progressBar,
+                            repository, filter),
+                    message -> {
+                        Alert alert = new Alert(Alert.AlertType.ERROR);
+                        alert.setHeaderText("Task sorting failed");
+                        alert.setContentText(message);
+                        alert.showAndWait();
+                    });
+
+            taskRow.getChildren().add(0, sortControls);
+        }
 
         checkBox.setOnAction(e -> {
 

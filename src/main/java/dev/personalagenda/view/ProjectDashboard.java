@@ -4,6 +4,7 @@ package dev.personalagenda.view;
 import dev.personalagenda.data.ProjectRepository;
 import dev.personalagenda.data.TaskRepository;
 import dev.personalagenda.data.TaskStepRepository;
+import dev.personalagenda.data.UiSortOrderRepository;
 import dev.personalagenda.model.Project;
 import dev.personalagenda.model.Task;
 import dev.personalagenda.model.TaskStep;
@@ -22,6 +23,8 @@ import javafx.scene.paint.Color;
 public class ProjectDashboard extends VBox {
 
         private final ProjectRepository projects = new ProjectRepository();
+
+        private final UiSortOrderRepository uiSort = new UiSortOrderRepository();
 
         private final TaskRepository tasks = new TaskRepository();
 
@@ -42,6 +45,24 @@ public class ProjectDashboard extends VBox {
                 setSpacing(16);
 
                 Label heading = new Label("Projects");
+
+                Button resetProjectOrder = new Button("Default Order");
+
+                resetProjectOrder.setOnAction(event -> {
+                        try {
+                                uiSort.reset("projects");
+                                refresh();
+                        } catch (SQLException ex) {
+                                status.setText(
+                                                "Unable to reset Project order: "
+                                                                + ex.getMessage());
+                        }
+                });
+
+                HBox headingRow = new HBox(
+                                12, heading, resetProjectOrder);
+                headingRow.setAlignment(
+                                javafx.geometry.Pos.CENTER_LEFT);
 
                 TextField nameInput = new TextField();
                 nameInput.setPromptText("Project name");
@@ -130,7 +151,7 @@ public class ProjectDashboard extends VBox {
                                 });
 
                 VBox creation = new VBox(
-                                10, heading, createProjectPane, status);
+                                10, headingRow, createProjectPane, status);
 
                 getChildren().addAll(creation, projectCards);
                 refresh();
@@ -161,7 +182,8 @@ public class ProjectDashboard extends VBox {
                 try {
                         List<Task> allTasks = tasks.findAll();
 
-                        for (Project project : projects.findAll()) {
+                        for (Project project : uiSort.ordered(
+                                        "projects", projects.findAll(), Project::id)) {
 
                                 Set<String> ids = new HashSet<>(
                                                 projects.findTaskIds(project.id()));
@@ -502,7 +524,18 @@ public class ProjectDashboard extends VBox {
                                                 tasksPane);
 
                                 card.getStyleClass().add("project-card");
+
+                                HBox sortControls = UiSortControls.attach(
+                                                "projects",
+                                                project.id(),
+                                                card,
+                                                projectCards,
+                                                this::refresh,
+                                                status::setText);
+
+                                projectHeader.getChildren().add(0, sortControls);
                                 projectCards.getChildren().add(card);
+
                         }
 
                 } catch (SQLException ex) {

@@ -260,6 +260,8 @@ public class Database {
                     )
                     """);
 
+            UiSortOrderRepository.ensureSchema(connection);
+
             statement.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS task_project_links (
                         task_id TEXT PRIMARY KEY,
