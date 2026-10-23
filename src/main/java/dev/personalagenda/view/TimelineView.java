@@ -32,6 +32,7 @@ import javafx.scene.control.OverrunStyle;
 import javafx.scene.control.ProgressBar;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Tooltip;
+import javafx.scene.input.KeyCode;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.input.ScrollEvent;
 import javafx.scene.layout.HBox;
@@ -118,9 +119,9 @@ public class TimelineView extends VBox {
                 Tooltip.install(liveFocusHit, liveFocusTooltip);
 
                 liveFocusLabel.setStyle(
-                                "-fx-background-color: #357E76;"
+                                "-fx-background-color: #A7DCCE;"
                                                 + "-fx-background-radius: 4;"
-                                                + "-fx-text-fill: white;"
+                                                + "-fx-text-fill: #205349;"
                                                 + "-fx-padding: 2;");
 
                 setSpacing(10);
@@ -528,9 +529,12 @@ public class TimelineView extends VBox {
                         bar.setMouseTransparent(true);
 
                         bar.setStyle(
-                                        "-fx-background-color: #26364A;"
+                                        "-fx-background-color: #B8CCE2;"
                                                         + "-fx-background-radius: 4;"
-                                                        + "-fx-text-fill: white;"
+                                                        + "-fx-border-color: #89A7C4;"
+                                                        + "-fx-border-width: 0.8;"
+                                                        + "-fx-border-radius: 4;"
+                                                        + "-fx-text-fill: #223B56;"
                                                         + (shortBar
                                                                         ? "-fx-padding: 0;"
                                                                         : "-fx-padding: 2;"));
