@@ -60,6 +60,7 @@ public class TimelineView extends VBox {
         private final Label legacyNotice = new Label();
         private final Label liveFocusLabel = new Label();
         private final Label liveFocusStatus = new Label();
+        private final Pane liveFocusHit = new Pane();
         private final Tooltip liveFocusTooltip = new Tooltip();
         private final ProgressBar currentTimeProgress = new ProgressBar(0);
         private final Label currentStatus = new Label();
@@ -95,13 +96,27 @@ public class TimelineView extends VBox {
                 scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
                 VBox.setVgrow(scrollPane, Priority.ALWAYS);
 
-                liveFocusLabel.layoutXProperty().bind(
-                                canvas.widthProperty().subtract(72).multiply(0.58).add(64));
+                liveFocusHit.layoutXProperty().bind(
+                                canvas.widthProperty().subtract(72)
+                                                .multiply(0.58).add(64));
+
+                liveFocusHit.prefWidthProperty().bind(
+                                canvas.widthProperty().subtract(72)
+                                                .multiply(0.42).subtract(4));
+
+                liveFocusHit.setPickOnBounds(true);
+
                 liveFocusLabel.prefWidthProperty().bind(
-                                canvas.widthProperty().subtract(72).multiply(0.42).subtract(4));
+                                liveFocusHit.widthProperty());
+
                 liveFocusLabel.setMinHeight(0);
                 liveFocusLabel.setWrapText(true);
-                liveFocusLabel.setTooltip(liveFocusTooltip);
+                liveFocusLabel.setMouseTransparent(true);
+
+                liveFocusHit.getChildren().add(liveFocusLabel);
+
+                Tooltip.install(liveFocusHit, liveFocusTooltip);
+
                 liveFocusLabel.setStyle(
                                 "-fx-background-color: #357E76;"
                                                 + "-fx-background-radius: 4;"
@@ -235,6 +250,7 @@ public class TimelineView extends VBox {
                         autoFollow = date.equals(LocalDate.now());
                 }
                 displayedDate = date;
+
                 configureTimeAxis(date);
 
                 List<TimeBlock> unresolvedBlocks = blocks.stream()
@@ -422,41 +438,114 @@ public class TimelineView extends VBox {
                 legacyNotice.setVisible(skippedLegacy > 0);
                 legacyNotice.setManaged(skippedLegacy > 0);
 
+                Map<String, WorkSession> visibleSessions = new HashMap<>();
+                List<FocusHitLayout.Span> focusSpans = new ArrayList<>();
+
                 for (WorkSession session : actualSessions) {
                         if (session.endedAt() == null) {
                                 continue;
                         }
+
                         Instant from = session.startedAt().isBefore(axisStart)
                                         ? axisStart
                                         : session.startedAt();
+
                         Instant to = session.endedAt().isAfter(axisEnd)
                                         ? axisEnd
                                         : session.endedAt();
+
                         if (!to.isAfter(from)) {
                                 continue;
                         }
+
+                        visibleSessions.put(session.id(), session);
+
                         double y = yForInstant(from);
-                        double height = yForInstant(to) - y;
-                        String title = focusTitle(session);
-                        Label actualLabel = new Label(title);
-                        actualLabel.setLayoutY(y);
-                        actualLabel.setPrefHeight(Math.max(6, height));
-                        actualLabel.setMinHeight(0);
-                        actualLabel.layoutXProperty().bind(
-                                        canvas.widthProperty().subtract(72).multiply(0.58).add(64));
-                        actualLabel.prefWidthProperty().bind(
-                                        canvas.widthProperty().subtract(72).multiply(0.42).subtract(4));
-                        actualLabel.setWrapText(true);
-                        actualLabel.setTextOverrun(OverrunStyle.ELLIPSIS);
-                        actualLabel.setStyle("-fx-background-color: #26364A;"
-                                        + "-fx-background-radius: 4;"
-                                        + "-fx-text-fill: white;"
-                                        + "-fx-padding: 2;");
-                        actualLabel.setTooltip(new Tooltip(title + "\n"
-                                        + session.startedAt().atZone(axisZone) + " → "
-                                        + session.endedAt().atZone(axisZone)
-                                        + "\nActual Focus · Pause excluded"));
-                        canvas.getChildren().add(actualLabel);
+                        double realHeight = yForInstant(to) - y;
+
+                        focusSpans.add(new FocusHitLayout.Span(
+                                        session.id(), y, realHeight));
+                }
+
+                for (FocusHitLayout.Placement placement : FocusHitLayout.assign(
+                                focusSpans, canvas.getPrefHeight())) {
+
+                        WorkSession session = visibleSessions.get(placement.span().id());
+
+                        Instant from = session.startedAt().isBefore(axisStart)
+                                        ? axisStart
+                                        : session.startedAt();
+
+                        Instant to = session.endedAt().isAfter(axisEnd)
+                                        ? axisEnd
+                                        : session.endedAt();
+
+                        String details = focusDetails(session, from, to);
+
+                        // Transparent, enlarged mouse/keyboard target.
+                        Pane hitTarget = new Pane();
+
+                        hitTarget.setLayoutY(placement.hitY());
+                        hitTarget.setPrefHeight(placement.hitHeight());
+                        hitTarget.setPickOnBounds(true);
+
+                        DoubleBinding slotWidth = canvas.widthProperty()
+                                        .subtract(72)
+                                        .multiply(0.42)
+                                        .subtract(4)
+                                        .divide(placement.laneCount());
+
+                        hitTarget.layoutXProperty().bind(
+                                        canvas.widthProperty()
+                                                        .subtract(72)
+                                                        .multiply(0.58)
+                                                        .add(64)
+                                                        .add(slotWidth.multiply(placement.lane())));
+
+                        hitTarget.prefWidthProperty().bind(
+                                        Bindings.createDoubleBinding(
+                                                        () -> Math.max(1.0, slotWidth.get() - 2.0),
+                                                        slotWidth));
+
+                        // The visible bar stays on its original time-axis position.
+                        boolean shortBar = placement.barHeight() < 14;
+
+                        Label bar = new Label(
+                                        shortBar ? "" : focusTitle(session));
+
+                        bar.setLayoutY(
+                                        placement.span().y() - placement.hitY());
+
+                        bar.setPrefHeight(placement.barHeight());
+                        bar.setMinHeight(0);
+                        bar.setMinWidth(0);
+
+                        bar.prefWidthProperty().bind(
+                                        hitTarget.widthProperty());
+
+                        bar.setWrapText(!shortBar);
+                        bar.setTextOverrun(OverrunStyle.ELLIPSIS);
+                        bar.setMouseTransparent(true);
+
+                        bar.setStyle(
+                                        "-fx-background-color: #26364A;"
+                                                        + "-fx-background-radius: 4;"
+                                                        + "-fx-text-fill: white;"
+                                                        + (shortBar
+                                                                        ? "-fx-padding: 0;"
+                                                                        : "-fx-padding: 2;"));
+
+                        hitTarget.getChildren().add(bar);
+
+                        Tooltip.install(hitTarget, new Tooltip(details));
+
+                        hitTarget.setOnMouseEntered(
+                                        event -> bar.setOpacity(0.85));
+
+                        hitTarget.setOnMouseExited(
+                                        event -> bar.setOpacity(1.0));
+
+                        canvas.getChildren().add(hitTarget);
                 }
 
                 updateLiveFocus();
@@ -464,6 +553,53 @@ public class TimelineView extends VBox {
                 if (autoFollow) {
                         Platform.runLater(this::scrollToNow);
                 }
+        }
+
+        private static String formatFocusDuration(
+                        Duration duration) {
+
+                long ms = Math.max(0, duration.toMillis());
+
+                return String.format(
+                                Locale.ENGLISH,
+                                "%02d:%02d:%02d.%03d",
+                                ms / 3_600_000,
+                                (ms / 60_000) % 60,
+                                (ms / 1_000) % 60,
+                                ms % 1_000);
+        }
+
+        private String focusDetails(
+                        WorkSession session,
+                        Instant visibleFrom,
+                        Instant visibleTo) {
+
+                DateTimeFormatter format = DateTimeFormatter.ofPattern(
+                                "uuuu-MM-dd HH:mm:ss XXX",
+                                Locale.ENGLISH);
+
+                String details = focusTitle(session)
+                                + "\nStart: "
+                                + session.startedAt()
+                                                .atZone(axisZone).format(format)
+                                + "\nEnd: "
+                                + session.endedAt()
+                                                .atZone(axisZone).format(format)
+                                + "\nRecorded: "
+                                + formatFocusDuration(
+                                                session.finishedDuration());
+
+                if (!visibleFrom.equals(session.startedAt())
+                                || !visibleTo.equals(session.endedAt())) {
+
+                        details += "\nVisible today: "
+                                        + formatFocusDuration(
+                                                        Duration.between(
+                                                                        visibleFrom, visibleTo));
+                }
+
+                return details
+                                + "\nActual Focus · Pause excluded";
         }
 
         private static String focusTitle(WorkSession session) {
@@ -478,9 +614,11 @@ public class TimelineView extends VBox {
         }
 
         private void hideLiveFocus() {
-                canvas.getChildren().remove(liveFocusLabel);
+                canvas.getChildren().remove(liveFocusHit);
+
                 liveFocusStatus.setVisible(false);
                 liveFocusStatus.setManaged(false);
+
         }
 
         private void updateLiveFocus() {
@@ -503,7 +641,9 @@ public class TimelineView extends VBox {
                 double y = yForInstant(from);
                 double height = yForInstant(to) - y;
                 String title = focusTitle(session);
-                liveFocusLabel.setText("● REC · " + title);
+
+                liveFocusLabel.setText(
+                                height < 14 ? "" : "● REC · " + title);
 
                 long elapsed = Math.max(0, Duration.between(
                                 session.startedAt(), instantNow).getSeconds());
@@ -512,19 +652,46 @@ public class TimelineView extends VBox {
                 liveFocusStatus.setText("● REC · " + title + " · " + elapsedText);
                 liveFocusStatus.setVisible(true);
                 liveFocusStatus.setManaged(true);
-                liveFocusLabel.setLayoutY(y);
-                liveFocusLabel.setPrefHeight(Math.max(6, height));
-                liveFocusTooltip.setText(title + "\nStarted: "
-                                + session.startedAt().atZone(axisZone)
-                                + "\nActual time through: " + instantNow.atZone(axisZone));
-                if (!canvas.getChildren().contains(liveFocusLabel)) {
+
+                double barHeight = Math.max(
+                                FocusHitLayout.MIN_BAR_HEIGHT, height);
+
+                double hitHeight = Math.max(
+                                FocusHitLayout.MIN_HIT_HEIGHT, barHeight);
+
+                double hitY = Math.max(0,
+                                Math.min(
+                                                y - (hitHeight - barHeight) / 2,
+                                                Math.max(0,
+                                                                canvas.getPrefHeight() - hitHeight)));
+
+                liveFocusHit.setLayoutY(hitY);
+                liveFocusHit.setPrefHeight(hitHeight);
+
+                liveFocusLabel.setLayoutY(y - hitY);
+                liveFocusLabel.setPrefHeight(barHeight);
+
+                liveFocusTooltip.setText(
+                                title
+                                                + "\nStarted: "
+                                                + session.startedAt().atZone(axisZone)
+                                                + "\nThis running segment: "
+                                                + formatFocusDuration(
+                                                                Duration.between(
+                                                                                session.startedAt(), instantNow))
+                                                + "\nPause excluded");
+
+                if (!canvas.getChildren().contains(liveFocusHit)) {
                         int nowIndex = canvas.getChildren().indexOf(nowLine);
+
                         if (nowIndex >= 0) {
-                                canvas.getChildren().add(nowIndex, liveFocusLabel);
+                                canvas.getChildren().add(
+                                                nowIndex, liveFocusHit);
                         } else {
-                                canvas.getChildren().add(liveFocusLabel);
+                                canvas.getChildren().add(liveFocusHit);
                         }
                 }
+
         }
 
         private void updateNow() {
