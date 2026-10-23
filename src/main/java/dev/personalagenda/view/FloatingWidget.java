@@ -180,7 +180,7 @@ public class FloatingWidget {
                 dailySection.getStyleClass().add("mini-card");
 
                 // Focus task/step controls.
-                Label focusTitle = new Label("Current Task");
+                Label focusTitle = new Label("Focus Task");
                 focusTaskChoice.setMaxWidth(Double.MAX_VALUE);
                 focusTaskChoice.setPromptText("Choose focus task");
                 focusTaskChoice.setOnAction(e -> {
@@ -322,10 +322,16 @@ public class FloatingWidget {
                 taskScroll.setPrefHeight(72);
                 taskScroll.setMaxHeight(96);
                 VBox focusContent = new VBox(10,
-                                currentLabel, focusTitle, focusPicker,
-                                scheduleFocusLabel, sessionControls,
-                                taskBar, taskProgressLabel, taskScroll,
-                                new Separator(), nextLabel);
+                                currentLabel,
+                                nextLabel,
+                                new Separator(),
+                                focusTitle,
+                                focusPicker,
+                                scheduleFocusLabel,
+                                sessionControls,
+                                taskBar,
+                                taskProgressLabel,
+                                taskScroll);
                 focusContent.getStyleClass().add("mini-card");
 
                 // Clock / Project tab retains the existing project progress algorithm.

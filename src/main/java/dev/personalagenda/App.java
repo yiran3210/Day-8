@@ -616,6 +616,8 @@ public class App extends Application {
 
         Label blockStatus = new Label();
 
+        TitledPane addActivityPane = new TitledPane("+ Add activity", null);
+
         saveBlockButton.setOnAction(event -> {
 
             String titleText = blockTitleInput.getText().trim();
@@ -732,6 +734,9 @@ public class App extends Application {
                 linkedTaskInput.setValue(null);
                 blockStatus.setText("Scheduled: " + titleText);
 
+                addActivityPane.setText("+ Add activity · Saved");
+                addActivityPane.setExpanded(false);
+
             } catch (DateTimeParseException ex) {
                 blockStatus.setText("Use time format HH:mm.");
             } catch (SQLException ex) {
@@ -845,9 +850,7 @@ public class App extends Application {
                 scheduleFormGrid,
                 blockStatus);
 
-        TitledPane addActivityPane = new TitledPane(
-                "+ Add activity",
-                activityForm);
+        addActivityPane.setContent(activityForm);
 
         activityForm.setMaxHeight(Region.USE_PREF_SIZE);
 
@@ -859,6 +862,13 @@ public class App extends Application {
 
         addActivityPane.setExpanded(false);
         addActivityPane.setAnimated(false);
+
+        addActivityPane.expandedProperty().addListener(
+                (obs, wasExpanded, expanded) -> {
+                    if (expanded) {
+                        addActivityPane.setText("+ Add activity");
+                    }
+                });
 
         Label activitiesTitle = new Label("Planned Activities");
 
