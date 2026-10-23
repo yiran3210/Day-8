@@ -11,6 +11,8 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -19,6 +21,8 @@ import java.util.Objects;
 
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
+import javafx.beans.binding.Bindings;
+import javafx.beans.binding.DoubleBinding;
 import javafx.application.Platform;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -293,40 +297,59 @@ public class TimelineView extends VBox {
 
                 LocalDateTime dayStart = date.atStartOfDay();
                 LocalDateTime dayEnd = date.plusDays(1).atStartOfDay();
+
                 int skippedLegacy = 0;
+                List<PlannedLaneLayout.Item> plannedItems = new ArrayList<>();
+
                 for (TimeBlock block : blocks) {
-                        // Old ambiguous or transition-crossing planned blocks cannot be
-                        // placed on an instant-based axis without inventing an offset.
+
+                        // Preserve the existing strict DST validation.
                         if (ScheduleTimeValidation.check(
                                         block.start(), block.end(), axisZone) != null) {
                                 skippedLegacy++;
                                 continue;
                         }
+
                         LocalDateTime start = block.start().isBefore(dayStart)
                                         ? dayStart
                                         : block.start();
+
                         LocalDateTime end = block.end().isAfter(dayEnd)
                                         ? dayEnd
                                         : block.end();
+
                         if (!end.isAfter(start)) {
                                 continue;
                         }
+
                         Instant from = strictLocalInstant(start);
                         Instant to = strictLocalInstant(end);
+
                         if (from == null || to == null || !to.isAfter(from)) {
                                 skippedLegacy++;
                                 continue;
                         }
-                        double y = yForInstant(from);
-                        double height = yForInstant(to) - y;
-                        boolean overlaps = blocks.stream().anyMatch(other -> !other.id().equals(block.id())
-                                        && block.start().isBefore(other.end())
-                                        && other.start().isBefore(block.end()));
-                        Label eventLabel = new Label(
-                                        (overlaps ? "⚠ " : "") + block.title() + "\n"
-                                                        + block.start().toLocalTime() + " – "
-                                                        + block.end().toLocalTime());
 
+                        plannedItems.add(
+                                        new PlannedLaneLayout.Item(block, from, to));
+                }
+
+                // Render each planned block in its assigned lane.
+                for (PlannedLaneLayout.Placement placement : PlannedLaneLayout.assign(plannedItems)) {
+
+                        TimeBlock block = placement.item().block();
+
+                        double y = yForInstant(placement.item().from());
+                        double height = yForInstant(placement.item().to()) - y;
+
+                        boolean overlaps = placement.laneCount() > 1;
+
+                        Label eventLabel = new Label(
+                                        (overlaps ? "⚠ " : "") + block.title()
+                                                        + (overlaps ? ""
+                                                                        : "\n" + block.start().toLocalTime()
+                                                                                        + " – "
+                                                                                        + block.end().toLocalTime()));
                         if (block.type() == TimeBlock.Type.TASK
                                         && block.taskId() == null) {
 
@@ -334,13 +357,29 @@ public class TimelineView extends VBox {
                                                 "⚠ Unlinked\n" + eventLabel.getText());
                         }
 
-                        eventLabel.setLayoutX(64);
                         eventLabel.setLayoutY(y);
                         eventLabel.setPrefHeight(height);
+
+                        DoubleBinding slotWidth = canvas.widthProperty()
+                                        .subtract(72)
+                                        .multiply(0.58)
+                                        .subtract(6)
+                                        .divide(placement.laneCount());
+
+                        eventLabel.layoutXProperty().bind(
+                                        slotWidth.multiply(placement.lane()).add(64));
+
                         eventLabel.prefWidthProperty().bind(
-                                        canvas.widthProperty().subtract(72).multiply(0.58).subtract(6));
+                                        Bindings.createDoubleBinding(
+                                                        () -> Math.max(1.0, slotWidth.get() - 3.0),
+                                                        slotWidth));
+
+                        eventLabel.setMinWidth(0);
                         eventLabel.setMinHeight(0);
-                        eventLabel.setWrapText(true);
+
+                        eventLabel.setWrapText(!overlaps);
+                        eventLabel.setTextOverrun(OverrunStyle.ELLIPSIS);
+
                         String typeStyle = switch (block.type()) {
                                 case TASK -> "time-block-task";
                                 case FIXED -> "time-block-fixed";
@@ -360,9 +399,21 @@ public class TimelineView extends VBox {
                                 eventLabel.setStyle("-fx-background-color: " + categoryColor
                                                 + ";-fx-text-fill: " + textColor + ";");
                         }
+
+                        if (overlaps) {
+                                eventLabel.setStyle(
+                                                eventLabel.getStyle() + "-fx-padding: 2px 3px;");
+                        }
+
                         eventLabel.setTooltip(new Tooltip(
-                                        block.title() + "\n" + block.start() + " → " + block.end()
-                                                        + (overlaps ? "\n⚠ Overlapping planned activities" : "")));
+                                        block.title() + "\n"
+                                                        + block.start() + " → " + block.end()
+                                                        + (overlaps
+                                                                        ? "\n⚠ Overlapping planned activities · lane "
+                                                                                        + (placement.lane() + 1)
+                                                                                        + "/" + placement.laneCount()
+                                                                        : "")));
+
                         canvas.getChildren().add(eventLabel);
                 }
                 legacyNotice.setText(skippedLegacy == 0 ? ""
