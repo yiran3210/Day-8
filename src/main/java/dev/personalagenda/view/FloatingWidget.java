@@ -116,7 +116,9 @@ public class FloatingWidget {
         // Session state. Pause/Resume creates separate, non-overlapping DB rows.
         private final Label sessionTimerLabel = new Label("00:00:00");
         private final Label sessionStatusLabel = new Label("Ready to focus");
-        private final Label todayActualLabel = new Label("Today's actual work: 0h 0m");
+
+        private final Label todayActualLabel = new Label("Focus Time Today: 0h 0m");
+
         private final Button sessionStartButton = new Button("Start");
         private final Button sessionPauseButton = new Button("Pause");
         private final Button sessionStopButton = new Button("Stop");
@@ -170,7 +172,8 @@ public class FloatingWidget {
                 window.setMinHeight(260);
                 installWindowIcons();
 
-                Label todayTitle = new Label("Today's Progress");
+                Label todayTitle = new Label("Today's Plan Completion");
+
                 todayTitle.getStyleClass().add("mini-section-title");
                 dailyLabel.getStyleClass().add("mini-stat");
                 taskProgressLabel.getStyleClass().add("mini-stat");
@@ -1385,7 +1388,7 @@ public class FloatingWidget {
                 if (!today.equals(finishedMillisDate)) {
 
                         todayActualLabel.setText(
-                                        "Today's actual work: updating...");
+                                        "Focus Time Today: updating...");
 
                         if (!dayRefreshPending && window.isShowing()) {
 
@@ -1420,7 +1423,9 @@ public class FloatingWidget {
                         }
                 }
                 long minutes = totalMillis / 60_000L;
-                todayActualLabel.setText("Today's actual work: "
+
+                todayActualLabel.setText("Focus Time Today: "
                                 + (minutes / 60) + "h " + (minutes % 60) + "m");
+
         }
 }

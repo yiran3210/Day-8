@@ -2435,7 +2435,8 @@ public class App extends Application {
         } catch (SQLException ex) {
             ex.printStackTrace();
 
-            progressLabel.setText("Today: unable to load progress");
+            progressLabel.setText("Today's Plan: unable to load completion");
+
             dailyProgressDetails.setText("Database read error");
             progressBar.setProgress(0);
             return;
@@ -2455,7 +2456,7 @@ public class App extends Application {
                 : (double) completedMinutes / plannedMinutes;
 
         progressLabel.setText(
-                "Today: " + Math.round(progress * 100) + "%"
+                "Today's Plan: " + Math.round(progress * 100) + "%"
                         + "  ·  " + completedMinutes + "/" + plannedMinutes
                         + " min");
 
