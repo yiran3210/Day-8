@@ -49,6 +49,11 @@ public class ProjectDashboard extends VBox {
 
                 Button createButton = new Button("Create Project");
 
+                TitledPane createProjectPane = new TitledPane("+ New Project", null);
+                createProjectPane.setExpanded(false);
+                createProjectPane.setAnimated(false);
+                createProjectPane.setMaxWidth(Double.MAX_VALUE);
+
                 categoryInput.setOnShowing(event -> loadCategories());
                 loadCategories();
 
@@ -64,6 +69,9 @@ public class ProjectDashboard extends VBox {
                                 nameInput.clear();
                                 status.setText("Project created.");
                                 refresh();
+
+                                createProjectPane.setText("+ New Project · Created");
+                                createProjectPane.setExpanded(false);
 
                         } catch (IllegalArgumentException ex) {
                                 status.setText(ex.getMessage());
@@ -109,8 +117,17 @@ public class ProjectDashboard extends VBox {
                 GridPane.setHalignment(
                                 createButton, javafx.geometry.HPos.RIGHT);
 
+                createProjectPane.setContent(creationGrid);
+
+                createProjectPane.expandedProperty().addListener(
+                                (obs, wasExpanded, expanded) -> {
+                                        if (expanded) {
+                                                createProjectPane.setText("+ New Project");
+                                        }
+                                });
+
                 VBox creation = new VBox(
-                                10, heading, creationGrid, status);
+                                10, heading, createProjectPane, status);
 
                 getChildren().addAll(creation, projectCards);
                 refresh();
