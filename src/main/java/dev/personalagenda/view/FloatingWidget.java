@@ -50,6 +50,7 @@ import javafx.scene.control.TabPane;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextInputDialog;
 import javafx.scene.control.TitledPane;
+import javafx.scene.control.Tooltip;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.layout.HBox;
@@ -110,6 +111,7 @@ public class FloatingWidget {
 
         private TimeBlock scheduledNow;
         private final Label scheduleFocusLabel = new Label();
+        private final Label compactFocusSummary = new Label("No Focus Task selected");
 
         private final Button wholeTaskButton = new Button("Whole task");
 
@@ -184,6 +186,17 @@ public class FloatingWidget {
 
                 // Focus task/step controls.
                 Label focusTitle = new Label("Focus Task");
+
+                compactFocusSummary.setWrapText(true);
+                compactFocusSummary.setMinWidth(0);
+                compactFocusSummary.setMaxWidth(Double.MAX_VALUE);
+
+                Tooltip focusSummaryTooltip = new Tooltip();
+                focusSummaryTooltip.textProperty().bind(
+                                compactFocusSummary.textProperty());
+
+                compactFocusSummary.setTooltip(focusSummaryTooltip);
+
                 focusTaskChoice.setMaxWidth(Double.MAX_VALUE);
                 focusTaskChoice.setPromptText("Choose focus task");
                 focusTaskChoice.setOnAction(e -> {
@@ -308,33 +321,83 @@ public class FloatingWidget {
                 HBox.setHgrow(focusStepChoice, Priority.ALWAYS);
                 wholeTaskButton.setMinWidth(Region.USE_PREF_SIZE);
 
-                VBox sessionControls = new VBox(
-                                6,
-                                new Label("Focus Step"),
-                                stepPicker,
-                                unlinkedFocusRow,
-                                sessionTimerLabel,
-                                sessionButtons,
-                                sessionStatusLabel,
-                                todayActualLabel,
-                                recentSessionsPane);
-
                 taskBar.setColor(Color.web("#887ABD"));
                 ScrollPane taskScroll = new ScrollPane(taskControls);
                 taskScroll.setFitToWidth(true);
                 taskScroll.setPrefHeight(72);
                 taskScroll.setMaxHeight(96);
-                VBox focusContent = new VBox(10,
+
+                Label focusPlanTitle = new Label("Today's Plan Completion");
+
+                Label focusPlanValue = new Label();
+                focusPlanValue.textProperty().bind(
+                                dailyLabel.textProperty());
+                focusPlanValue.getStyleClass().add("mini-stat");
+
+                // Advanced options. All controls retain their original instances.
+                VBox focusDetailsContent = new VBox(
+                                8,
+                                new Label("Choose Focus Task"),
+                                focusPicker,
+                                new Label("Focus Step"),
+                                stepPicker,
+                                unlinkedFocusRow,
+                                new Separator(),
+                                todayActualLabel,
+                                recentSessionsPane,
+                                new Separator(),
+                                new Label("Focus Task Progress"),
+                                taskBar,
+                                taskProgressLabel,
+                                taskScroll,
+                                new Separator(),
+                                focusPlanTitle,
+                                focusPlanValue);
+
+                // Keep long details scrollable without hiding the Compact controls.
+                ScrollPane focusDetailsScroll = new ScrollPane(focusDetailsContent);
+
+                focusDetailsScroll.setFitToWidth(true);
+                focusDetailsScroll.setHbarPolicy(
+                                ScrollPane.ScrollBarPolicy.NEVER);
+
+                focusDetailsScroll.setPrefViewportHeight(250);
+                focusDetailsScroll.setPrefHeight(260);
+                focusDetailsScroll.setMaxHeight(280);
+
+                TitledPane focusDetailsPane = new TitledPane("Details", focusDetailsScroll);
+
+                focusDetailsPane.setExpanded(false);
+                focusDetailsPane.setAnimated(false);
+                focusDetailsPane.setMaxWidth(Double.MAX_VALUE);
+
+                // A quick way to open Task / Step selection from Compact.
+                Button changeFocusButton = new Button("Change");
+                changeFocusButton.setMinWidth(Region.USE_PREF_SIZE);
+
+                changeFocusButton.setOnAction(
+                                event -> focusDetailsPane.setExpanded(true));
+
+                HBox compactFocusRow = new HBox(
+                                8, compactFocusSummary, changeFocusButton);
+
+                compactFocusRow.setAlignment(Pos.CENTER_LEFT);
+                HBox.setHgrow(compactFocusSummary, Priority.ALWAYS);
+
+                // Minimal Focus layout: essential controls are always visible.
+                VBox focusContent = new VBox(
+                                10,
                                 currentLabel,
                                 nextLabel,
                                 new Separator(),
                                 focusTitle,
-                                focusPicker,
+                                compactFocusRow,
                                 scheduleFocusLabel,
-                                sessionControls,
-                                taskBar,
-                                taskProgressLabel,
-                                taskScroll);
+                                sessionTimerLabel,
+                                sessionButtons,
+                                sessionStatusLabel,
+                                focusDetailsPane);
+
                 focusContent.getStyleClass().add("mini-card");
 
                 // Clock / Project tab retains the existing project progress algorithm.
@@ -387,9 +450,15 @@ public class FloatingWidget {
 
                 autoProjectButton.setMinWidth(Region.USE_PREF_SIZE);
 
-                VBox clockContent = new VBox(10, clockHero,
-                                new Label("Project Progress"), projectPicker,
-                                projectBar, projectProgressLabel, projectExpectedLabel);
+                VBox clockContent = new VBox(
+                                10,
+                                dailySection,
+                                clockHero,
+                                new Label("Project Progress"),
+                                projectPicker,
+                                projectBar,
+                                projectProgressLabel,
+                                projectExpectedLabel);
 
                 clockContent.setAlignment(Pos.TOP_CENTER);
                 clockContent.getStyleClass().add("mini-card");
@@ -412,7 +481,7 @@ public class FloatingWidget {
                 refreshButton.setOnAction(e -> refresh());
                 HBox footer = new HBox(8, openButton, refreshButton);
 
-                root = new VBox(7, dailySection, tabs, errorLabel, footer);
+                root = new VBox(7, tabs, errorLabel, footer);
                 root.setPadding(new Insets(10));
                 root.getStyleClass().add("mini-widget");
                 root.setPrefWidth(340);
@@ -449,6 +518,8 @@ public class FloatingWidget {
                 tabs.getSelectionModel().selectedItemProperty().addListener(
                                 (obs, previous, next) -> requestResize());
                 recentSessionsPane.expandedProperty().addListener(
+                                (obs, before, after) -> requestResize());
+                focusDetailsPane.expandedProperty().addListener(
                                 (obs, before, after) -> requestResize());
                 window.setOnShown(e -> requestResize());
 
@@ -1216,6 +1287,61 @@ public class FloatingWidget {
                                                 now.getHour(), now.getMinute()));
         }
 
+        private void updateCompactFocusSummary() {
+
+                WorkSession session = focusService.activeSession();
+
+                if (session == null) {
+                        session = focusService.pausedSession();
+                }
+
+                // An active/paused Session takes precedence over UI selection.
+                if (session != null) {
+
+                        String taskName = session.taskTitle();
+                        String stepName = session.stepTitle();
+
+                        String prefix = session.taskId() == null
+                                        ? "Unlinked Focus: "
+                                        : "";
+
+                        compactFocusSummary.setText(
+                                        prefix + taskName
+                                                        + (stepName == null
+                                                                        ? ""
+                                                                        : " / " + stepName));
+
+                        return;
+                }
+
+                // No running Session: reflect the user's selected mode.
+                if (unlinkedFocusMode.isSelected()) {
+
+                        String title = unlinkedFocusTitle.getText().trim();
+
+                        compactFocusSummary.setText(
+                                        title.isEmpty()
+                                                        ? "Unlinked Focus · set title in Details"
+                                                        : "Unlinked Focus: " + title);
+
+                        return;
+                }
+
+                if (currentFocusedTask == null) {
+                        compactFocusSummary.setText(
+                                        "No Focus Task selected");
+                        return;
+                }
+
+                TaskStep selectedStep = focusStepChoice.getValue();
+
+                compactFocusSummary.setText(
+                                currentFocusedTask.getTitle()
+                                                + (selectedStep == null
+                                                                ? ""
+                                                                : " / " + selectedStep.title()));
+        }
+
         private void updateSessionTimer() {
 
                 Duration elapsed = focusService.elapsed(Instant.now());
@@ -1268,6 +1394,7 @@ public class FloatingWidget {
                                 locked || unlinkedFocusMode.isSelected());
                 recoverSessionButton.setVisible(unresolvedSession);
 
+                updateCompactFocusSummary();
                 updateActualTodayLabel();
         }
 
