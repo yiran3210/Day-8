@@ -4,7 +4,7 @@
 > 给一周七天装不下的计划，多留一天。
 
 **Windows x64 · Java 25 · JavaFX · SQLite · Local-first**  
-**Version / 版本：** `v0.2.0` · Portable
+**Version / 版本：** `v0.2.1` · Portable
 
 Day 8 is a local-first planner for **planning work, handling unfinished tasks, and tracking what actually gets done**. Because planning two hours, working two hours, and finishing the task are three different things.
 
@@ -46,7 +46,7 @@ Day 8 is a local-first planner for **planning work, handling unfinished tasks, a
 
 ## 🚀 Getting started / 如何使用
 
-**Windows Portable:** Get `Day8-v0.2.0-win-x64-portable.zip` from Releases once published, extract the **whole folder**, and double-click **`Day 8.exe`**. The runtime is bundled—no separate Java or Maven installation is needed.
+**Windows Portable:** Get `Day8-v0.2.1-win-x64-portable.zip` from Releases once published, extract the **whole folder**, and double-click **`Day 8.exe`**. The runtime is bundled—no separate Java or Maven installation is needed.
 
 **Windows 便携版：** 下载发布后的 ZIP，**完整解压**，双击 `Day 8.exe`。程序已附带 Java 运行环境，不需要另装 JDK 或 Maven。
 
@@ -84,7 +84,7 @@ Build the portable app / 打包便携版：
 .\scripts\package-windows.ps1
 ```
 
-No Windows installer in `v0.2.0`; the Portable ZIP is the supported distribution. / 当前版本仅发布 Windows 便携版。
+No Windows installer in `v0.2.1`; the Portable ZIP is the supported distribution. / 当前版本仅发布 Windows 便携版。
 
 ## 🤖 How it was made / 开发方式
 

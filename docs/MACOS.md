@@ -25,7 +25,7 @@ Use **Window → Data Location...** to select another folder; this takes effect 
 
 3. Open **GitHub → Actions → Build Day 8 for macOS**. Pushing this branch triggers a run automatically; you do not need the workflow on `main` initially for the `push` trigger.
 4. Wait until both `macOS arm64` and `macOS x64` jobs are green. Under the workflow run's **Artifacts**, download `Day8-macos-arm64` and/or `Day8-macos-x64`.
-5. GitHub Actions artifact downloads contain the generated `Day8-v0.2.0-macos-*.zip` files. Extract the inner application archive on the corresponding Mac to obtain `Day 8.app`.
+5. GitHub Actions artifact downloads contain the generated `Day8-v0.2.1-macos-*.zip` files. Extract the inner application archive on the corresponding Mac to obtain `Day 8.app`.
 
 If Actions is disabled for the repository, enable it in **Settings → Actions → General**. Mac hosted runner minutes may be billed depending on repository visibility and account allowances.
 
@@ -45,4 +45,4 @@ The build selects the JavaFX classifier automatically: **`mac-aarch64` for Apple
 - **Not signed / not notarized.** This is a testable build, not a frictionless signed Mac release. Apple's Gatekeeper may block it. Use **System Settings → Privacy & Security → Open Anyway** after attempting to open the app, if you trust the source. Don't disable Gatekeeper globally.
 - **No GUI validation yet.** GitHub Actions verifies compilation and packaging, but not interactive JavaFX functionality. On a real Mac, test Tasks/Steps, Day Plan, Mini Widget, Focus Start/Pause/Resume/Stop, Data Location, and Insights. Check that the Dock Quit action doesn't leave unexpected open sessions (unfinished sessions should be recovered).
 - **No data files are bundled.** An empty Mac database is created on first run. If you intentionally migrate an existing database, close Day 8 and back it up first; ensure any SQLite WAL transactions are checkpointed before copying.
-- **Do not move the existing `v0.2.0` Git tag.** This package changes cross-platform behavior. Verify the builds on the feature branch, then merge and consider a subsequent release, e.g. `v0.2.1`, for officially published macOS files.
+- **Do not move the existing `v0.2.1` Git tag.** This package changes cross-platform behavior. Verify the builds on the feature branch, then merge and consider a subsequent release, e.g. `v0.2.1`, for officially published macOS files.
