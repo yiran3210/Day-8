@@ -79,7 +79,7 @@ rm -rf "$APP"
 "$JPACKAGE" \
   --type app-image \
   --name 'Day 8' \
-  --app-version "1.2.0" \
+  --app-version "1.2.1" \
   --description 'Day 8 (星期八) personal planning and productivity' \
   --input "$INPUT" \
   --main-jar "$(basename "$JAR")" \
