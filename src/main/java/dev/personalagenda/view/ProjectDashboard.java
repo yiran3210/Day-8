@@ -4,6 +4,7 @@ package dev.personalagenda.view;
 import dev.personalagenda.data.ProjectRepository;
 import dev.personalagenda.data.TaskRepository;
 import dev.personalagenda.data.TaskStepRepository;
+import dev.personalagenda.data.UiSortOrderRepository;
 import dev.personalagenda.model.Project;
 import dev.personalagenda.model.Task;
 import dev.personalagenda.model.TaskStep;
@@ -23,6 +24,8 @@ public class ProjectDashboard extends VBox {
 
         private final ProjectRepository projects = new ProjectRepository();
 
+        private final UiSortOrderRepository uiSort = new UiSortOrderRepository();
+
         private final TaskRepository tasks = new TaskRepository();
 
         private final TaskStepRepository steps = new TaskStepRepository();
@@ -30,6 +33,9 @@ public class ProjectDashboard extends VBox {
         private final Map<String, String> categoryColors;
 
         private final VBox projectCards = new VBox(16);
+
+        private final Set<String> expandedAssignedTaskProjectIds = new HashSet<>();
+
         private final Label status = new Label();
         private final ComboBox<String> categoryInput = new ComboBox<>();
 
@@ -40,6 +46,24 @@ public class ProjectDashboard extends VBox {
 
                 Label heading = new Label("Projects");
 
+                Button resetProjectOrder = new Button("Default Order");
+
+                resetProjectOrder.setOnAction(event -> {
+                        try {
+                                uiSort.reset("projects");
+                                refresh();
+                        } catch (SQLException ex) {
+                                status.setText(
+                                                "Unable to reset Project order: "
+                                                                + ex.getMessage());
+                        }
+                });
+
+                HBox headingRow = new HBox(
+                                12, heading, resetProjectOrder);
+                headingRow.setAlignment(
+                                javafx.geometry.Pos.CENTER_LEFT);
+
                 TextField nameInput = new TextField();
                 nameInput.setPromptText("Project name");
 
@@ -48,6 +72,11 @@ public class ProjectDashboard extends VBox {
                 DatePicker dueInput = new DatePicker(LocalDate.now().plusDays(30));
 
                 Button createButton = new Button("Create Project");
+
+                TitledPane createProjectPane = new TitledPane("+ New Project", null);
+                createProjectPane.setExpanded(false);
+                createProjectPane.setAnimated(false);
+                createProjectPane.setMaxWidth(Double.MAX_VALUE);
 
                 categoryInput.setOnShowing(event -> loadCategories());
                 loadCategories();
@@ -64,6 +93,9 @@ public class ProjectDashboard extends VBox {
                                 nameInput.clear();
                                 status.setText("Project created.");
                                 refresh();
+
+                                createProjectPane.setText("+ New Project · Created");
+                                createProjectPane.setExpanded(false);
 
                         } catch (IllegalArgumentException ex) {
                                 status.setText(ex.getMessage());
@@ -109,8 +141,17 @@ public class ProjectDashboard extends VBox {
                 GridPane.setHalignment(
                                 createButton, javafx.geometry.HPos.RIGHT);
 
+                createProjectPane.setContent(creationGrid);
+
+                createProjectPane.expandedProperty().addListener(
+                                (obs, wasExpanded, expanded) -> {
+                                        if (expanded) {
+                                                createProjectPane.setText("+ New Project");
+                                        }
+                                });
+
                 VBox creation = new VBox(
-                                10, heading, creationGrid, status);
+                                10, headingRow, createProjectPane, status);
 
                 getChildren().addAll(creation, projectCards);
                 refresh();
@@ -141,7 +182,8 @@ public class ProjectDashboard extends VBox {
                 try {
                         List<Task> allTasks = tasks.findAll();
 
-                        for (Project project : projects.findAll()) {
+                        for (Project project : uiSort.ordered(
+                                        "projects", projects.findAll(), Project::id)) {
 
                                 Set<String> ids = new HashSet<>(
                                                 projects.findTaskIds(project.id()));
@@ -164,8 +206,9 @@ public class ProjectDashboard extends VBox {
                                                         .mapToInt(TaskStep::estimatedMinutes)
                                                         .sum();
 
-                                        int planned = Math.max(
-                                                        task.getEstimatedMinutes(), allocated);
+                                        int planned = taskSteps.isEmpty()
+                                                        ? task.getEstimatedMinutes()
+                                                        : allocated;
 
                                         int done = taskSteps.isEmpty()
                                                         ? (task.isCompleted() ? planned : 0)
@@ -195,7 +238,9 @@ public class ProjectDashboard extends VBox {
                                                 }
                                         });
 
-                                        Label taskLabel = new Label(task.getTitle());
+                                        Label taskLabel = new Label(
+                                                        task.getTitle()
+                                                                        + (task.isCompleted() ? " ✓" : ""));
                                         HBox.setHgrow(taskLabel, Priority.ALWAYS);
 
                                         assignedRows.getChildren().add(
@@ -246,7 +291,10 @@ public class ProjectDashboard extends VBox {
                                                                 (actual - expected) * 100));
 
                                 ComboBox<Task> taskInput = new ComboBox<>();
-                                taskInput.getItems().setAll(allTasks);
+                                taskInput.getItems().setAll(
+                                                allTasks.stream()
+                                                                .filter(task -> !task.isCompleted())
+                                                                .toList());
                                 taskInput.setPromptText("Choose task");
                                 taskInput.setMaxWidth(Double.MAX_VALUE);
 
@@ -288,8 +336,18 @@ public class ProjectDashboard extends VBox {
                                                 "Assigned Tasks (" + assignedCount + ")",
                                                 taskManagement);
 
-                                tasksPane.setExpanded(false);
+                                tasksPane.setExpanded(
+                                                expandedAssignedTaskProjectIds.contains(project.id()));
                                 tasksPane.setAnimated(false);
+
+                                tasksPane.expandedProperty().addListener(
+                                                (obs, wasExpanded, expanded) -> {
+                                                        if (expanded) {
+                                                                expandedAssignedTaskProjectIds.add(project.id());
+                                                        } else {
+                                                                expandedAssignedTaskProjectIds.remove(project.id());
+                                                        }
+                                                });
 
                                 Button editProjectButton = new Button("Edit");
 
@@ -421,7 +479,9 @@ public class ProjectDashboard extends VBox {
                                         }
 
                                         try {
+
                                                 projects.delete(project.id());
+                                                expandedAssignedTaskProjectIds.remove(project.id());
                                                 refresh();
 
                                         } catch (SQLException ex) {
@@ -464,7 +524,18 @@ public class ProjectDashboard extends VBox {
                                                 tasksPane);
 
                                 card.getStyleClass().add("project-card");
+
+                                HBox sortControls = UiSortControls.attach(
+                                                "projects",
+                                                project.id(),
+                                                card,
+                                                projectCards,
+                                                this::refresh,
+                                                status::setText);
+
+                                projectHeader.getChildren().add(0, sortControls);
                                 projectCards.getChildren().add(card);
+
                         }
 
                 } catch (SQLException ex) {

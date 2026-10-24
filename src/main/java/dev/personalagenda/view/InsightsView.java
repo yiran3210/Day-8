@@ -155,6 +155,7 @@ public class InsightsView extends VBox {
         yAxis.setMinorTickVisible(false);
 
         hoursChart.getStyleClass().add("insights-chart");
+        hoursChart.getStyleClass().add("actual-hours-chart");
         hoursChart.setMaxHeight(300);
         hoursChart.setAnimated(false);
         hoursChart.setLegendVisible(false);
@@ -164,9 +165,9 @@ public class InsightsView extends VBox {
 
         completionXAxis.setAutoRanging(false);
         completionYAxis.setAutoRanging(false);
-        completionYAxis.setLabel("Completion (%)");
+        completionYAxis.setLabel("Plan completion (%)");
 
-        completionChart.setTitle("Task Completion Rate");
+        completionChart.setTitle("Observed Plan Completion");
         completionChart.setAnimated(false);
         completionChart.setLegendVisible(false);
         completionChart.setCreateSymbols(true);
@@ -303,10 +304,30 @@ public class InsightsView extends VBox {
                 totalMillis += millis;
                 elapsedBuckets++;
 
-                series.getData().add(
-                        new XYChart.Data<>(
-                                i + 1,
-                                millis / 3_600_000.0));
+                double hoursInBucket = millis / 3_600_000.0;
+
+                XYChart.Data<Number, Number> point = new XYChart.Data<>(i + 1, hoursInBucket);
+
+                boolean zeroBucket = millis == 0;
+
+                point.nodeProperty().addListener(
+                        (obs, oldNode, node) -> {
+                            if (node == null) {
+                                return;
+                            }
+
+                            if (zeroBucket) {
+                                node.setOpacity(0.0);
+                            } else {
+                                Tooltip.install(node, new Tooltip(
+                                        String.format(
+                                                Locale.ENGLISH,
+                                                "Actual Focus: %.2f h",
+                                                hoursInBucket)));
+                            }
+                        });
+
+                series.getData().add(point);
             }
 
             xAxis.setAutoRanging(false);
@@ -511,8 +532,20 @@ public class InsightsView extends VBox {
                 segments.add(segment);
             }
 
-            segment.getData().add(
-                    new XYChart.Data<>(i + 1, value));
+            XYChart.Data<Number, Number> point = new XYChart.Data<>(i + 1, value);
+
+            point.nodeProperty().addListener(
+                    (obs, oldNode, node) -> {
+                        if (node != null) {
+                            Tooltip.install(node, new Tooltip(
+                                    String.format(
+                                            Locale.ENGLISH,
+                                            "Observed completion: %.1f%%",
+                                            value)));
+                        }
+                    });
+
+            segment.getData().add(point);
         }
 
         completionChart.getData().setAll(segments);

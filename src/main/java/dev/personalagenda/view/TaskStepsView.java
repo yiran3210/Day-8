@@ -8,7 +8,9 @@ import dev.personalagenda.data.TaskStepRepository;
 
 import java.sql.SQLException;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 import javafx.geometry.Pos;
 import javafx.scene.control.*;
@@ -24,9 +26,19 @@ public class TaskStepsView extends VBox {
     private final Consumer<TaskStep> onSchedule;
     private final Consumer<TaskStep> onFocus;
 
+    private Predicate<TaskStep> deleteGuard = step -> true;
+
+    public void setDeleteGuard(Predicate<TaskStep> guard) {
+        this.deleteGuard = Objects.requireNonNull(guard);
+    }
+
     private final ProgressBar bar = new ProgressBar(0);
     private final Label summary = new Label();
     private final VBox stepRows = new VBox(6);
+
+    private final Button toggleButton = new Button("Steps ▸");
+    private final VBox details;
+    private Boolean previousAllStepsCompleted = null;
 
     public TaskStepsView(
             Task task,
@@ -50,8 +62,6 @@ public class TaskStepsView extends VBox {
         bar.setMaxWidth(Double.MAX_VALUE);
         HBox.setHgrow(bar, Priority.ALWAYS);
 
-        Button toggleButton = new Button("Steps ▾");
-
         HBox header = new HBox(
                 10, new Label("Progress"), bar,
                 summary, toggleButton);
@@ -62,6 +72,7 @@ public class TaskStepsView extends VBox {
         stepName.setPromptText("New step");
 
         Spinner<Integer> stepMinutes = new Spinner<>(5, 600, 30, 5);
+        MinuteSpinnerSupport.enable(stepMinutes);
         stepMinutes.setPrefWidth(95);
 
         Button addButton = new Button("+ Step");
@@ -80,15 +91,11 @@ public class TaskStepsView extends VBox {
         stepMinutes.setMinWidth(Region.USE_PREF_SIZE);
         addButton.setMinWidth(Region.USE_PREF_SIZE);
 
-        VBox details = new VBox(8, stepRows, addRow);
-        details.setVisible(false);
-        details.setManaged(false);
+        details = new VBox(8, stepRows, addRow);
 
-        toggleButton.setOnAction(event -> {
-            boolean expanded = !details.isVisible();
-            details.setVisible(expanded);
-            details.setManaged(expanded);
-        });
+        setDetailsExpanded(false);
+
+        toggleButton.setOnAction(event -> setDetailsExpanded(!details.isVisible()));
 
         addButton.setOnAction(event -> {
 
@@ -97,11 +104,23 @@ public class TaskStepsView extends VBox {
                 return;
             }
 
+            int minutes;
+
+            try {
+                minutes = MinuteSpinnerSupport.read(stepMinutes);
+            } catch (IllegalArgumentException ex) {
+                Alert alert = new Alert(Alert.AlertType.WARNING);
+                alert.setHeaderText("Invalid step duration");
+                alert.setContentText(ex.getMessage());
+                alert.showAndWait();
+                return;
+            }
+
             try {
                 TaskStep step = new TaskStep(
                         task.getId(),
                         title,
-                        stepMinutes.getValue());
+                        minutes);
 
                 stepRepository.insert(step);
                 stepName.clear();
@@ -118,6 +137,12 @@ public class TaskStepsView extends VBox {
         refresh();
     }
 
+    private void setDetailsExpanded(boolean expanded) {
+        details.setVisible(expanded);
+        details.setManaged(expanded);
+        toggleButton.setText(expanded ? "Steps ▾" : "Steps ▸");
+    }
+
     public void refresh() {
 
         try {
@@ -132,15 +157,33 @@ public class TaskStepsView extends VBox {
                     .mapToInt(TaskStep::estimatedMinutes)
                     .sum();
 
-            int total = Math.max(
-                    task.getEstimatedMinutes(), allocated);
-
             boolean hasSteps = !steps.isEmpty();
+
+            boolean allStepsCompleted = hasSteps
+                    && steps.stream().allMatch(TaskStep::completed);
+
+            // Auto-collapse only when the task changes
+            // from partially completed to fully completed.
+            if (Boolean.FALSE.equals(previousAllStepsCompleted)
+                    && allStepsCompleted) {
+                setDetailsExpanded(false);
+            }
+
+            previousAllStepsCompleted = allStepsCompleted;
+
+            int total = hasSteps
+                    ? allocated
+                    : task.getEstimatedMinutes();
+
+            int bufferMinutes = hasSteps
+                    ? Math.max(0, task.getEstimatedMinutes() - allocated)
+                    : 0;
 
             // Steps determine the parent task's status
             if (hasSteps) {
 
-                boolean completed = completedMinutes >= total;
+                boolean completed = steps.stream()
+                        .allMatch(TaskStep::completed);
 
                 if (task.isCompleted() != completed) {
                     taskRepository.updateCompleted(
@@ -161,8 +204,11 @@ public class TaskStepsView extends VBox {
             if (hasSteps) {
                 summary.setText(
                         Math.round(progress * 100) + "%"
-                                + " · " + completedMinutes
-                                + "/" + total + " min");
+                                + " · Steps " + completedMinutes
+                                + "/" + total + " min"
+                                + (bufferMinutes > 0
+                                        ? " · Buffer " + bufferMinutes + " min"
+                                        : ""));
             } else {
                 summary.setText(
                         task.isCompleted()
@@ -222,6 +268,8 @@ public class TaskStepsView extends VBox {
                 Spinner<Integer> stepMinutesEdit = new Spinner<>(
                         1, 1440, step.estimatedMinutes(), 5);
 
+                MinuteSpinnerSupport.enable(stepMinutesEdit);
+
                 stepMinutesEdit.setPrefWidth(105);
 
                 Button saveStepEdit = new Button("Save");
@@ -262,9 +310,18 @@ public class TaskStepsView extends VBox {
                         return;
                     }
 
+                    int minutes;
+
+                    try {
+                        minutes = MinuteSpinnerSupport.read(stepMinutesEdit);
+                    } catch (IllegalArgumentException ex) {
+                        editStatus.setText(ex.getMessage());
+                        return;
+                    }
+
                     try {
                         stepRepository.updateDetails(
-                                step.id(), title, stepMinutesEdit.getValue());
+                                step.id(), title, minutes);
 
                         refresh();
                         onChanged.run();
@@ -295,6 +352,11 @@ public class TaskStepsView extends VBox {
                 });
 
                 deleteButton.setOnAction(event -> {
+
+                    if (!deleteGuard.test(step)) {
+                        return;
+                    }
+
                     try {
                         stepRepository.delete(step.id());
 

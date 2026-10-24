@@ -6,6 +6,7 @@ import dev.personalagenda.data.TaskRepository;
 import dev.personalagenda.data.TaskStepRepository;
 import dev.personalagenda.data.TimeBlockRepository;
 import dev.personalagenda.data.WorkSessionRepository;
+import dev.personalagenda.data.DailyPlanRepository;
 import dev.personalagenda.model.Project;
 import dev.personalagenda.model.Task;
 import dev.personalagenda.model.TaskStep;
@@ -36,6 +37,7 @@ import javafx.animation.Timeline;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.geometry.Rectangle2D;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
@@ -46,16 +48,20 @@ import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Separator;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
+import javafx.scene.control.TextField;
 import javafx.scene.control.TextInputDialog;
 import javafx.scene.control.TitledPane;
+import javafx.scene.control.Tooltip;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.stage.Modality;
+import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 import javafx.stage.WindowEvent;
@@ -69,6 +75,7 @@ public class FloatingWidget {
         private final FocusSessionService focusService;
 
         private final TaskRepository tasks = new TaskRepository();
+        private final DailyPlanRepository dailyPlans = new DailyPlanRepository();
         private final TaskStepRepository steps = new TaskStepRepository();
         private final TimeBlockRepository blocks = new TimeBlockRepository();
         private final ProjectRepository projects = new ProjectRepository();
@@ -89,6 +96,10 @@ public class FloatingWidget {
 
         // Focus selection.
         private final ComboBox<Task> focusTaskChoice = new ComboBox<>();
+
+        private final CheckBox unlinkedFocusMode = new CheckBox("Focus without Task");
+
+        private final TextField unlinkedFocusTitle = new TextField();
         private final ComboBox<TaskStep> focusStepChoice = new ComboBox<>();
         private final Button autoFocusButton = new Button("Auto");
         private final VBox taskControls = new VBox(6);
@@ -103,13 +114,16 @@ public class FloatingWidget {
 
         private TimeBlock scheduledNow;
         private final Label scheduleFocusLabel = new Label();
+        private final Label compactFocusSummary = new Label("No Focus Task selected");
 
         private final Button wholeTaskButton = new Button("Whole task");
 
         // Session state. Pause/Resume creates separate, non-overlapping DB rows.
         private final Label sessionTimerLabel = new Label("00:00:00");
         private final Label sessionStatusLabel = new Label("Ready to focus");
-        private final Label todayActualLabel = new Label("Today's actual work: 0h 0m");
+
+        private final Label todayActualLabel = new Label("Focus Time Today: 0h 0m");
+
         private final Button sessionStartButton = new Button("Start");
         private final Button sessionPauseButton = new Button("Pause");
         private final Button sessionStopButton = new Button("Stop");
@@ -148,6 +162,10 @@ public class FloatingWidget {
         private Runnable resizeWidgetAction = () -> {
         };
 
+        private boolean userResizedMini = false;
+        private boolean applyingMiniSize = false;
+        private boolean miniSizeTrackingActive = false;
+
         public FloatingWidget(
                         Stage mainWindow,
                         Runnable onDataChanged,
@@ -163,7 +181,8 @@ public class FloatingWidget {
                 window.setMinHeight(260);
                 installWindowIcons();
 
-                Label todayTitle = new Label("Today's Progress");
+                Label todayTitle = new Label("Today's Plan Completion");
+
                 todayTitle.getStyleClass().add("mini-section-title");
                 dailyLabel.getStyleClass().add("mini-stat");
                 taskProgressLabel.getStyleClass().add("mini-stat");
@@ -173,7 +192,18 @@ public class FloatingWidget {
                 dailySection.getStyleClass().add("mini-card");
 
                 // Focus task/step controls.
-                Label focusTitle = new Label("Current Task");
+                Label focusTitle = new Label("Focus Task");
+
+                compactFocusSummary.setWrapText(true);
+                compactFocusSummary.setMinWidth(0);
+                compactFocusSummary.setMaxWidth(Double.MAX_VALUE);
+
+                Tooltip focusSummaryTooltip = new Tooltip();
+                focusSummaryTooltip.textProperty().bind(
+                                compactFocusSummary.textProperty());
+
+                compactFocusSummary.setTooltip(focusSummaryTooltip);
+
                 focusTaskChoice.setMaxWidth(Double.MAX_VALUE);
                 focusTaskChoice.setPromptText("Choose focus task");
                 focusTaskChoice.setOnAction(e -> {
@@ -255,6 +285,19 @@ public class FloatingWidget {
                 scheduleFocusLabel.managedProperty().bind(
                                 scheduleFocusLabel.visibleProperty());
 
+                unlinkedFocusTitle.setPromptText(
+                                "Activity title (e.g. Unexpected meeting)");
+
+                unlinkedFocusTitle.setMaxWidth(Double.MAX_VALUE);
+
+                unlinkedFocusMode.setOnAction(event -> refresh());
+
+                HBox unlinkedFocusRow = new HBox(
+                                8, unlinkedFocusMode, unlinkedFocusTitle);
+
+                unlinkedFocusRow.setAlignment(Pos.CENTER_LEFT);
+                HBox.setHgrow(unlinkedFocusTitle, Priority.ALWAYS);
+
                 sessionTimerLabel.setStyle("-fx-font-size: 23px; -fx-font-weight: bold;");
                 sessionStatusLabel.setWrapText(true);
                 todayActualLabel.setStyle("-fx-font-size: 13px; -fx-font-weight: bold;");
@@ -265,9 +308,15 @@ public class FloatingWidget {
                 recoverSessionButton.managedProperty().bind(
                                 recoverSessionButton.visibleProperty());
 
-                HBox sessionButtons = new HBox(6, sessionStartButton,
-                                sessionPauseButton, sessionStopButton, recoverSessionButton);
+                FlowPane sessionButtons = new FlowPane(
+                                6, 6,
+                                sessionStartButton,
+                                sessionPauseButton,
+                                sessionStopButton,
+                                recoverSessionButton);
+
                 sessionButtons.setAlignment(Pos.CENTER_LEFT);
+
                 for (Button button : new Button[] { sessionStartButton, sessionPauseButton,
                                 sessionStopButton, recoverSessionButton }) {
                         button.setMinWidth(Region.USE_PREF_SIZE);
@@ -285,21 +334,83 @@ public class FloatingWidget {
                 HBox.setHgrow(focusStepChoice, Priority.ALWAYS);
                 wholeTaskButton.setMinWidth(Region.USE_PREF_SIZE);
 
-                VBox sessionControls = new VBox(6,
-                                new Label("Focus Step"), stepPicker,
-                                sessionTimerLabel, sessionButtons,
-                                sessionStatusLabel, todayActualLabel, recentSessionsPane);
-
                 taskBar.setColor(Color.web("#887ABD"));
                 ScrollPane taskScroll = new ScrollPane(taskControls);
                 taskScroll.setFitToWidth(true);
                 taskScroll.setPrefHeight(72);
                 taskScroll.setMaxHeight(96);
-                VBox focusContent = new VBox(10,
-                                currentLabel, focusTitle, focusPicker,
-                                scheduleFocusLabel, sessionControls,
-                                taskBar, taskProgressLabel, taskScroll,
-                                new Separator(), nextLabel);
+
+                Label focusPlanTitle = new Label("Today's Plan Completion");
+
+                Label focusPlanValue = new Label();
+                focusPlanValue.textProperty().bind(
+                                dailyLabel.textProperty());
+                focusPlanValue.getStyleClass().add("mini-stat");
+
+                // Advanced options. All controls retain their original instances.
+                VBox focusDetailsContent = new VBox(
+                                8,
+                                new Label("Choose Focus Task"),
+                                focusPicker,
+                                new Label("Focus Step"),
+                                stepPicker,
+                                unlinkedFocusRow,
+                                new Separator(),
+                                todayActualLabel,
+                                recentSessionsPane,
+                                new Separator(),
+                                new Label("Focus Task Progress"),
+                                taskBar,
+                                taskProgressLabel,
+                                taskScroll,
+                                new Separator(),
+                                focusPlanTitle,
+                                focusPlanValue);
+
+                // Keep long details scrollable without hiding the Compact controls.
+                ScrollPane focusDetailsScroll = new ScrollPane(focusDetailsContent);
+
+                focusDetailsScroll.setFitToWidth(true);
+                focusDetailsScroll.setHbarPolicy(
+                                ScrollPane.ScrollBarPolicy.NEVER);
+
+                focusDetailsScroll.setPrefViewportHeight(250);
+                focusDetailsScroll.setPrefHeight(260);
+                focusDetailsScroll.setMaxHeight(280);
+
+                TitledPane focusDetailsPane = new TitledPane("Details", focusDetailsScroll);
+
+                focusDetailsPane.setExpanded(false);
+                focusDetailsPane.setAnimated(false);
+                focusDetailsPane.setMaxWidth(Double.MAX_VALUE);
+
+                // A quick way to open Task / Step selection from Compact.
+                Button changeFocusButton = new Button("Change");
+                changeFocusButton.setMinWidth(Region.USE_PREF_SIZE);
+
+                changeFocusButton.setOnAction(
+                                event -> focusDetailsPane.setExpanded(true));
+
+                HBox compactFocusRow = new HBox(
+                                8, compactFocusSummary, changeFocusButton);
+
+                compactFocusRow.setAlignment(Pos.CENTER_LEFT);
+                HBox.setHgrow(compactFocusSummary, Priority.ALWAYS);
+
+                // Minimal Focus layout: essential controls are always visible.
+                VBox focusContent = new VBox(
+                                10,
+                                currentLabel,
+                                nextLabel,
+                                new Separator(),
+                                focusTitle,
+                                compactFocusRow,
+                                scheduleFocusLabel,
+                                sessionTimerLabel,
+                                sessionButtons,
+                                sessionStatusLabel,
+                                focusDetailsPane);
+
                 focusContent.getStyleClass().add("mini-card");
 
                 // Clock / Project tab retains the existing project progress algorithm.
@@ -342,7 +453,10 @@ public class FloatingWidget {
                 clockFocusCard.setMaxWidth(120);
                 clockFocusCard.getStyleClass().add("clock-focus-card");
                 VBox clockInfo = new VBox(12, clockTimeLabel, clockFocusCard);
-                HBox clockHero = new HBox(10, clockFace, clockInfo);
+
+                FlowPane clockHero = new FlowPane(
+                                10, 10, clockFace, clockInfo);
+
                 clockHero.setAlignment(Pos.CENTER_LEFT);
 
                 HBox projectPicker = new HBox(6, clockProjectChoice, autoProjectButton);
@@ -352,20 +466,42 @@ public class FloatingWidget {
 
                 autoProjectButton.setMinWidth(Region.USE_PREF_SIZE);
 
-                VBox clockContent = new VBox(10, clockHero,
-                                new Label("Project Progress"), projectPicker,
-                                projectBar, projectProgressLabel, projectExpectedLabel);
+                VBox clockContent = new VBox(
+                                10,
+                                dailySection,
+                                clockHero,
+                                new Label("Project Progress"),
+                                projectPicker,
+                                projectBar,
+                                projectProgressLabel,
+                                projectExpectedLabel);
 
                 clockContent.setAlignment(Pos.TOP_CENTER);
                 clockContent.getStyleClass().add("mini-card");
 
-                Tab focusTab = new Tab("Focus", focusContent);
-                Tab clockTab = new Tab("Clock", clockContent);
+                ScrollPane focusViewport = new ScrollPane(focusContent);
+                focusViewport.setFitToWidth(true);
+                focusViewport.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+                focusViewport.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+                focusViewport.setMinHeight(0);
+                focusViewport.setPannable(true);
+
+                ScrollPane clockViewport = new ScrollPane(clockContent);
+                clockViewport.setFitToWidth(true);
+                clockViewport.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+                clockViewport.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+                clockViewport.setMinHeight(0);
+                clockViewport.setPannable(true);
+
+                Tab focusTab = new Tab("Focus", focusViewport);
+                Tab clockTab = new Tab("Clock", clockViewport);
+
                 focusTab.setClosable(false);
                 clockTab.setClosable(false);
                 tabs = new TabPane(focusTab, clockTab);
-                tabs.setMinHeight(Region.USE_PREF_SIZE);
-                tabs.setMaxHeight(Region.USE_PREF_SIZE);
+                tabs.setMinHeight(0);
+                tabs.setMaxHeight(Double.MAX_VALUE);
+                VBox.setVgrow(tabs, Priority.ALWAYS);
 
                 Button openButton = new Button("Open Day 8");
                 openButton.setOnAction(e -> {
@@ -375,9 +511,20 @@ public class FloatingWidget {
                 });
                 Button refreshButton = new Button("↻");
                 refreshButton.setOnAction(e -> refresh());
-                HBox footer = new HBox(8, openButton, refreshButton);
+                Button fitButton = new Button("Fit");
 
-                root = new VBox(7, dailySection, tabs, errorLabel, footer);
+                fitButton.setTooltip(new javafx.scene.control.Tooltip(
+                                "Restore automatic Mini size"));
+
+                fitButton.setOnAction(event -> {
+                        userResizedMini = false;
+                        requestResize();
+                });
+
+                HBox footer = new HBox(
+                                8, openButton, refreshButton, fitButton);
+
+                root = new VBox(7, tabs, errorLabel, footer);
                 root.setPadding(new Insets(10));
                 root.getStyleClass().add("mini-widget");
                 root.setPrefWidth(340);
@@ -391,31 +538,45 @@ public class FloatingWidget {
                 }
                 window.setScene(scene);
 
+                window.widthProperty().addListener(
+                                (obs, oldWidth, newWidth) -> {
+                                        if (miniSizeTrackingActive
+                                                        && !applyingMiniSize
+                                                        && Math.abs(newWidth.doubleValue()
+                                                                        - oldWidth.doubleValue()) > 2) {
+                                                userResizedMini = true;
+                                        }
+                                });
+
+                window.heightProperty().addListener(
+                                (obs, oldHeight, newHeight) -> {
+                                        if (miniSizeTrackingActive
+                                                        && !applyingMiniSize
+                                                        && Math.abs(newHeight.doubleValue()
+                                                                        - oldHeight.doubleValue()) > 2) {
+                                                userResizedMini = true;
+                                        }
+                                });
+
                 // Compute the height of the selected tab, rather than fixing a taller widget.
-                resizeWidgetAction = () -> {
-                        if (!window.isShowing())
-                                return;
-                        root.applyCss();
-                        Region content = (Region) tabs.getSelectionModel()
-                                        .getSelectedItem().getContent();
-                        double contentWidth = Math.max(300, tabs.getWidth() - 24);
-                        double contentHeight = content.prefHeight(contentWidth);
-                        double headerHeight = 42;
-                        javafx.scene.Node header = tabs.lookup(".tab-header-area");
-                        if (header instanceof Region region) {
-                                headerHeight = Math.max(36, region.prefHeight(-1));
-                        }
-                        tabs.setPrefHeight(contentHeight + headerHeight + 4);
-                        root.requestLayout();
-                        root.applyCss();
-                        root.layout();
-                        window.sizeToScene();
-                };
+
+                resizeWidgetAction = this::resizeMiniToContent;
+
                 tabs.getSelectionModel().selectedItemProperty().addListener(
                                 (obs, previous, next) -> requestResize());
                 recentSessionsPane.expandedProperty().addListener(
                                 (obs, before, after) -> requestResize());
-                window.setOnShown(e -> requestResize());
+                focusDetailsPane.expandedProperty().addListener(
+                                (obs, before, after) -> requestResize());
+
+                window.setOnShown(e -> {
+                        miniSizeTrackingActive = false;
+
+                        requestResize();
+
+                        Platform.runLater(
+                                        () -> miniSizeTrackingActive = true);
+                });
 
                 dataClock.setCycleCount(Timeline.INDEFINITE);
                 sessionTicker.setCycleCount(Timeline.INDEFINITE);
@@ -447,13 +608,7 @@ public class FloatingWidget {
         }
 
         private void installWindowIcons() {
-                // Resource-only icons: no hard dependency on another utility class.
-                for (int size : new int[] { 16, 32, 64, 256 }) {
-                        URL image = getClass().getResource("/icons/agenda-icon-" + size + ".png");
-                        if (image != null) {
-                                window.getIcons().add(new javafx.scene.image.Image(image.toExternalForm()));
-                        }
-                }
+                AppIcons.apply(window);
         }
 
         private void handleMainWindowClose(WindowEvent event) {
@@ -545,8 +700,136 @@ public class FloatingWidget {
                 return focusService.state() != FocusSessionService.State.IDLE;
         }
 
+        private Rectangle2D miniVisualBounds() {
+                var screens = Screen.getScreensForRectangle(
+                                window.getX(),
+                                window.getY(),
+                                Math.max(1, window.getWidth()),
+                                Math.max(1, window.getHeight()));
+
+                Screen screen = screens.isEmpty()
+                                ? Screen.getPrimary()
+                                : screens.get(0);
+
+                return screen.getVisualBounds();
+        }
+
+        private void keepMiniOnScreen(Rectangle2D bounds) {
+                if (window.getWidth() > bounds.getWidth()) {
+                        window.setWidth(bounds.getWidth());
+                }
+
+                if (window.getHeight() > bounds.getHeight()) {
+                        window.setHeight(bounds.getHeight());
+                }
+
+                double x = Double.isFinite(window.getX())
+                                ? window.getX()
+                                : bounds.getMinX();
+                double y = Double.isFinite(window.getY())
+                                ? window.getY()
+                                : bounds.getMinY();
+
+                window.setX(Math.max(
+                                bounds.getMinX(),
+                                Math.min(x, bounds.getMaxX() - window.getWidth())));
+
+                window.setY(Math.max(
+                                bounds.getMinY(),
+                                Math.min(y, bounds.getMaxY() - window.getHeight())));
+        }
+
+        private void resizeMiniToContent() {
+                if (!window.isShowing()) {
+                        return;
+                }
+
+                Rectangle2D bounds = miniVisualBounds();
+
+                applyingMiniSize = true;
+
+                try {
+                        if (!userResizedMini) {
+                                boolean focusSelected = tabs.getSelectionModel().getSelectedIndex() == 0;
+
+                                double preferredWidth = focusSelected ? 360 : 390;
+
+                                double chromeWidth = Math.max(
+                                                0, window.getWidth() - window.getScene().getWidth());
+
+                                double chromeHeight = Math.max(
+                                                0, window.getHeight() - window.getScene().getHeight());
+
+                                double targetWidth = Math.max(
+                                                window.getMinWidth(),
+                                                Math.min(preferredWidth, bounds.getWidth()));
+
+                                window.setWidth(targetWidth);
+
+                                root.applyCss();
+
+                                ScrollPane viewport = (ScrollPane) tabs
+                                                .getSelectionModel()
+                                                .getSelectedItem()
+                                                .getContent();
+
+                                Region content = (Region) viewport.getContent();
+
+                                double sceneWidth = Math.max(
+                                                1, targetWidth - chromeWidth);
+
+                                double contentWidth = Math.max(
+                                                1, sceneWidth - 44);
+
+                                double contentHeight = content.prefHeight(contentWidth);
+
+                                double headerHeight = 42;
+                                javafx.scene.Node header = tabs.lookup(".tab-header-area");
+
+                                if (header instanceof Region region) {
+                                        headerHeight = Math.max(
+                                                        36, region.prefHeight(-1));
+                                }
+
+                                tabs.setPrefHeight(
+                                                contentHeight + headerHeight + 8);
+
+                                root.requestLayout();
+                                root.applyCss();
+                                root.layout();
+
+                                double targetHeight = root.prefHeight(sceneWidth)
+                                                + chromeHeight + 8;
+
+                                window.setHeight(Math.max(
+                                                window.getMinHeight(),
+                                                Math.min(targetHeight, bounds.getHeight())));
+                        }
+
+                        // In manual mode, preserve the chosen size.
+                        // Only prevent the widget from remaining off-screen.
+                        keepMiniOnScreen(bounds);
+
+                } finally {
+                        applyingMiniSize = false;
+                }
+        }
+
         private void requestResize() {
                 Platform.runLater(resizeWidgetAction);
+        }
+
+        public void refreshAfterExternalChange() {
+
+                // Do not open a hidden Mini Widget automatically.
+                if (!window.isShowing()) {
+                        return;
+                }
+
+                // Re-read Task, Step, Schedule and Project data.
+                // Existing Focus Session identity remains controlled
+                // by FocusSessionService.
+                refresh();
         }
 
         public void show() {
@@ -577,6 +860,12 @@ public class FloatingWidget {
                 }
         }
 
+        public void refreshFromDatabase() {
+                if (window.isShowing()) {
+                        refresh();
+                }
+        }
+
         private void refresh() {
                 try {
                         LocalDateTime now = LocalDateTime.now();
@@ -584,21 +873,11 @@ public class FloatingWidget {
                         List<Task> allTasks = tasks.findAll();
 
                         // Today's estimated completed workload.
-                        int planned = 0;
-                        int done = 0;
-                        for (Task task : allTasks) {
-                                if (!today.equals(task.getPlannedDate()))
-                                        continue;
-                                List<TaskStep> taskSteps = steps.findByTaskId(task.getId());
-                                int allocated = taskSteps.stream().mapToInt(TaskStep::estimatedMinutes).sum();
-                                int taskPlanned = Math.max(task.getEstimatedMinutes(), allocated);
-                                int taskDone = taskSteps.isEmpty()
-                                                ? (task.isCompleted() ? taskPlanned : 0)
-                                                : taskSteps.stream().filter(TaskStep::completed)
-                                                                .mapToInt(TaskStep::estimatedMinutes).sum();
-                                planned += taskPlanned;
-                                done += Math.min(taskDone, taskPlanned);
-                        }
+                        DailyPlanRepository.DailySummary summary = dailyPlans.findByDate(today);
+
+                        int planned = summary.plannedMinutes();
+                        int done = summary.completedMinutes();
+
                         dailyBar.setValues(planned == 0 ? 0 : done / (double) planned, 0);
                         dailyLabel.setText(done + " / " + planned + " min completed");
 
@@ -712,6 +991,10 @@ public class FloatingWidget {
                         selected = allTasks.stream()
                                         .filter(task -> today.equals(task.getPlannedDate()) && !task.isCompleted())
                                         .findFirst().orElse(null);
+                }
+
+                if (unlinkedFocusMode.isSelected()) {
+                        selected = null;
                 }
 
                 updatingFocusChoice = true;
@@ -903,7 +1186,9 @@ public class FloatingWidget {
         private void showFocusedTask(Task linkedTask) throws SQLException {
                 List<TaskStep> taskSteps = steps.findByTaskId(linkedTask.getId());
                 int allocated = taskSteps.stream().mapToInt(TaskStep::estimatedMinutes).sum();
-                int total = Math.max(linkedTask.getEstimatedMinutes(), allocated);
+                int total = taskSteps.isEmpty()
+                                ? linkedTask.getEstimatedMinutes()
+                                : allocated;
                 int completed = taskSteps.isEmpty()
                                 ? (linkedTask.isCompleted() ? total : 0)
                                 : taskSteps.stream().filter(TaskStep::completed)
@@ -938,15 +1223,11 @@ public class FloatingWidget {
                                         try {
                                                 steps.updateCompleted(step.id(), checkBox.isSelected());
                                                 List<TaskStep> updated = steps.findByTaskId(linkedTask.getId());
-                                                int updatedAllocated = updated.stream()
-                                                                .mapToInt(TaskStep::estimatedMinutes).sum();
-                                                int updatedCompleted = updated.stream()
-                                                                .filter(TaskStep::completed)
-                                                                .mapToInt(TaskStep::estimatedMinutes).sum();
-                                                int updatedTotal = Math.max(
-                                                                linkedTask.getEstimatedMinutes(), updatedAllocated);
-                                                tasks.updateCompleted(linkedTask.getId(),
-                                                                updatedCompleted >= updatedTotal);
+                                                boolean allStepsCompleted = updated.stream()
+                                                                .allMatch(TaskStep::completed);
+
+                                                tasks.updateCompleted(
+                                                                linkedTask.getId(), allStepsCompleted);
                                                 onDataChanged.run();
                                                 refresh();
                                         } catch (SQLException ex) {
@@ -983,7 +1264,9 @@ public class FloatingWidget {
                                 continue;
                         List<TaskStep> taskSteps = steps.findByTaskId(task.getId());
                         int allocated = taskSteps.stream().mapToInt(TaskStep::estimatedMinutes).sum();
-                        int planned = Math.max(task.getEstimatedMinutes(), allocated);
+                        int planned = taskSteps.isEmpty()
+                                        ? task.getEstimatedMinutes()
+                                        : allocated;
                         int completed = taskSteps.isEmpty()
                                         ? (task.isCompleted() ? planned : 0)
                                         : taskSteps.stream().filter(TaskStep::completed)
@@ -1016,6 +1299,27 @@ public class FloatingWidget {
         }
 
         private void refreshClockFocus() throws SQLException {
+                WorkSession unlinkedSession = focusService.activeSession() != null
+                                ? focusService.activeSession()
+                                : focusService.pausedSession();
+
+                if (unlinkedSession != null
+                                && unlinkedSession.taskId() == null) {
+
+                        clockFocusLabel.setText(unlinkedSession.taskTitle());
+                        clockFocusCategory.setText("UNLINKED FOCUS · ACTUAL ONLY");
+
+                        clockFocusCard.setStyle(
+                                        "-fx-background-color: #E8EDF5;"
+                                                        + "-fx-background-radius: 10;"
+                                                        + "-fx-padding: 10;");
+
+                        clockFocusLabel.setStyle("-fx-text-fill: #26364A;");
+                        clockFocusCategory.setStyle("-fx-text-fill: #526478;");
+
+                        return;
+                }
+
                 if (currentFocusedTask == null) {
                         clockFocusLabel.setText("No focus task");
                         clockFocusCategory.setText("Choose a task in Focus");
@@ -1051,19 +1355,39 @@ public class FloatingWidget {
                 Task task = currentFocusedTask;
                 TaskStep step = focusStepChoice.getValue();
 
-                if (task == null) {
+                boolean unlinked = unlinkedFocusMode.isSelected();
+
+                if (focusService.state() == FocusSessionService.State.IDLE
+                                && !unlinked && task == null) {
+
                         sessionStatusLabel.setText("Choose a task first.");
                         return;
                 }
 
                 try {
+                        WorkSession session;
+
                         if (focusService.state() == FocusSessionService.State.PAUSED) {
-                                focusService.resume(task, step);
+
+                                if (focusService.pausedSession().taskId() == null) {
+                                        session = focusService.resumeUnlinked();
+                                } else {
+                                        session = focusService.resume(task, step);
+                                }
+
+                        } else if (unlinked) {
+
+                                session = focusService.startUnlinked(
+                                                unlinkedFocusTitle.getText());
+
                         } else {
-                                focusService.start(task, step);
+
+                                session = focusService.start(task, step);
                         }
 
-                        sessionStatusLabel.setText("Recording actual work.");
+                        sessionStatusLabel.setText(
+                                        "Recording: " + session.taskTitle());
+
                         refresh();
 
                 } catch (SQLException | IllegalArgumentException
@@ -1127,6 +1451,61 @@ public class FloatingWidget {
                                                 now.getHour(), now.getMinute()));
         }
 
+        private void updateCompactFocusSummary() {
+
+                WorkSession session = focusService.activeSession();
+
+                if (session == null) {
+                        session = focusService.pausedSession();
+                }
+
+                // An active/paused Session takes precedence over UI selection.
+                if (session != null) {
+
+                        String taskName = session.taskTitle();
+                        String stepName = session.stepTitle();
+
+                        String prefix = session.taskId() == null
+                                        ? "Unlinked Focus: "
+                                        : "";
+
+                        compactFocusSummary.setText(
+                                        prefix + taskName
+                                                        + (stepName == null
+                                                                        ? ""
+                                                                        : " / " + stepName));
+
+                        return;
+                }
+
+                // No running Session: reflect the user's selected mode.
+                if (unlinkedFocusMode.isSelected()) {
+
+                        String title = unlinkedFocusTitle.getText().trim();
+
+                        compactFocusSummary.setText(
+                                        title.isEmpty()
+                                                        ? "Unlinked Focus · set title in Details"
+                                                        : "Unlinked Focus: " + title);
+
+                        return;
+                }
+
+                if (currentFocusedTask == null) {
+                        compactFocusSummary.setText(
+                                        "No Focus Task selected");
+                        return;
+                }
+
+                TaskStep selectedStep = focusStepChoice.getValue();
+
+                compactFocusSummary.setText(
+                                currentFocusedTask.getTitle()
+                                                + (selectedStep == null
+                                                                ? ""
+                                                                : " / " + selectedStep.title()));
+        }
+
         private void updateSessionTimer() {
 
                 Duration elapsed = focusService.elapsed(Instant.now());
@@ -1148,18 +1527,38 @@ public class FloatingWidget {
                 sessionStartButton.setText(paused ? "Resume" : "Start");
 
                 sessionStartButton.setDisable(
-                                recording || unresolvedSession || currentFocusedTask == null);
+                                recording
+                                                || unresolvedSession
+                                                || (!paused
+                                                                && !unlinkedFocusMode.isSelected()
+                                                                && currentFocusedTask == null));
 
                 sessionPauseButton.setDisable(!recording);
                 sessionStopButton.setDisable(!locked);
 
-                focusTaskChoice.setDisable(locked);
-                focusStepChoice.setDisable(locked || currentFocusedTask == null);
-                wholeTaskButton.setDisable(locked || currentFocusedTask == null);
-                autoFocusButton.setDisable(locked);
+                unlinkedFocusMode.setDisable(locked);
 
+                unlinkedFocusTitle.setDisable(
+                                locked || !unlinkedFocusMode.isSelected());
+
+                focusTaskChoice.setDisable(
+                                locked || unlinkedFocusMode.isSelected());
+
+                focusStepChoice.setDisable(
+                                locked
+                                                || unlinkedFocusMode.isSelected()
+                                                || currentFocusedTask == null);
+
+                wholeTaskButton.setDisable(
+                                locked
+                                                || unlinkedFocusMode.isSelected()
+                                                || currentFocusedTask == null);
+
+                autoFocusButton.setDisable(
+                                locked || unlinkedFocusMode.isSelected());
                 recoverSessionButton.setVisible(unresolvedSession);
 
+                updateCompactFocusSummary();
                 updateActualTodayLabel();
         }
 
@@ -1280,7 +1679,7 @@ public class FloatingWidget {
                 if (!today.equals(finishedMillisDate)) {
 
                         todayActualLabel.setText(
-                                        "Today's actual work: updating...");
+                                        "Focus Time Today: updating...");
 
                         if (!dayRefreshPending && window.isShowing()) {
 
@@ -1315,7 +1714,9 @@ public class FloatingWidget {
                         }
                 }
                 long minutes = totalMillis / 60_000L;
-                todayActualLabel.setText("Today's actual work: "
+
+                todayActualLabel.setText("Focus Time Today: "
                                 + (minutes / 60) + "h " + (minutes % 60) + "m");
+
         }
 }

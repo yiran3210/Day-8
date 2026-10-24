@@ -18,16 +18,21 @@ public class Database {
 
     private static Path resolveDatabasePath() {
 
-        // 1. Explicit JVM configuration has highest priority.
+        // 1. Explicit launch overrides take priority over stored preferences.
         String configured = System.getProperty("agenda.data.dir");
-
         if (configured == null || configured.isBlank()) {
             configured = System.getenv("AGENDA_DATA_DIR");
         }
+        if (configured != null && !configured.isBlank()) {
+            return Path.of(configured.trim())
+                    .toAbsolutePath()
+                    .normalize()
+                    .resolve("agenda.db");
+        }
 
+        // 2. User-selected directory (applies on the next launch).
         String saved = Preferences.userNodeForPackage(Database.class)
                 .get(DATA_DIR_PREF_KEY, null);
-
         if (saved != null && !saved.isBlank()) {
             return Path.of(saved)
                     .toAbsolutePath()
@@ -35,37 +40,32 @@ public class Database {
                     .resolve("agenda.db");
         }
 
-        if (configured != null && !configured.isBlank()) {
-            return Path.of(configured.trim())
-                    .toAbsolutePath()
-                    .resolve("agenda.db");
+        String os = System.getProperty("os.name", "")
+                .toLowerCase(java.util.Locale.ROOT);
+
+        if (os.contains("win")) {
+            // Preserve data on existing Windows installations without migration.
+            Path legacy = Path.of("F:/AgendaData/agenda.db");
+            if (Files.isRegularFile(legacy)
+                    || Files.isDirectory(legacy.getParent())) {
+                return legacy;
+            }
+
+            String localAppData = System.getenv("LOCALAPPDATA");
+            if (localAppData != null && !localAppData.isBlank()) {
+                return Path.of(localAppData, "PersonalAgenda", "agenda.db");
+            }
         }
 
-        // 2. Preserve the existing installation and its database.
-        Path legacy = Path.of("F:/AgendaData/agenda.db");
-
-        if (Files.isRegularFile(legacy)) {
-            return legacy;
+        if (os.contains("mac")) {
+            // Normal writable per-user app data location on macOS.
+            return Path.of(System.getProperty("user.home"),
+                    "Library", "Application Support", "Day 8", "agenda.db");
         }
 
-        // 3. If the existing data directory is already present,
-        // continue using it.
-        if (Files.isDirectory(legacy.getParent())) {
-            return legacy;
-        }
-
-        // 4. Standard per-user directory on other Windows machines.
-        String localAppData = System.getenv("LOCALAPPDATA");
-
-        if (localAppData != null && !localAppData.isBlank()) {
-            return Path.of(localAppData, "PersonalAgenda", "agenda.db");
-        }
-
-        // 5. Fallback for non-Windows development environments.
-        return Path.of(
-                System.getProperty("user.home"),
-                ".personal-agenda",
-                "agenda.db");
+        // Fallback for Linux and other development environments.
+        return Path.of(System.getProperty("user.home"),
+                ".personal-agenda", "agenda.db");
     }
 
     public static Connection connect() throws SQLException {
@@ -260,6 +260,8 @@ public class Database {
                     )
                     """);
 
+            UiSortOrderRepository.ensureSchema(connection);
+
             statement.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS task_project_links (
                         task_id TEXT PRIMARY KEY,
@@ -306,6 +308,48 @@ public class Database {
             statement.executeUpdate("""
                     CREATE INDEX IF NOT EXISTS idx_completion_date
                     ON completion_observations(local_date, id)
+                    """);
+
+            statement.executeUpdate("""
+                            CREATE TABLE IF NOT EXISTS daily_plan_items (
+                                local_date TEXT NOT NULL,
+                                item_key TEXT NOT NULL,
+                                task_id TEXT NOT NULL,
+                                step_id TEXT,
+                                task_title TEXT NOT NULL,
+                                step_title TEXT,
+                                category_name TEXT NOT NULL,
+                                planned_minutes INTEGER NOT NULL
+                                    CHECK(planned_minutes > 0),
+                                completed INTEGER NOT NULL DEFAULT 0
+                                    CHECK(completed IN (0, 1)),
+                                recorded_at_ms INTEGER NOT NULL,
+                                completed_at_ms INTEGER,
+                                PRIMARY KEY (local_date, item_key)
+                            )
+                    """);
+
+            statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS plan_change_events (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        occurred_at_ms INTEGER NOT NULL,
+                        task_id TEXT NOT NULL,
+                        item_key TEXT,
+                        event_type TEXT NOT NULL CHECK (
+                            event_type IN (
+                                'SCHEDULE',
+                                'RESCHEDULE',
+                                'TO_BACKLOG',
+                                'CORRECT_PLAN'
+                            )
+                        ),
+                        old_date TEXT,
+                        new_date TEXT,
+                        affected_date TEXT,
+                        old_planned_minutes INTEGER,
+                        new_planned_minutes INTEGER,
+                        reason TEXT
+                    )
                     """);
 
             statement.executeUpdate("""
@@ -391,6 +435,252 @@ public class Database {
                                     + "; END");
                 }
             }
+
+            statement.executeUpdate("""
+                    CREATE TRIGGER IF NOT EXISTS trg_daily_step_completion
+                    AFTER UPDATE OF completed ON task_steps
+                    WHEN OLD.completed <> NEW.completed
+                    BEGIN
+                        UPDATE daily_plan_items
+                        SET completed = NEW.completed,
+                            completed_at_ms =
+                                CASE WHEN NEW.completed = 1
+                                     THEN CAST(strftime('%s', 'now') AS INTEGER) * 1000
+                                     ELSE NULL
+                                END
+                        WHERE step_id = NEW.id
+                          AND local_date = date('now', 'localtime');
+                    END
+                    """);
+
+            statement.executeUpdate("""
+                    CREATE TRIGGER IF NOT EXISTS trg_daily_task_completion
+                    AFTER UPDATE OF completed ON tasks
+                    WHEN OLD.completed <> NEW.completed
+                    BEGIN
+                        UPDATE daily_plan_items
+                        SET completed = NEW.completed,
+                            completed_at_ms =
+                                CASE WHEN NEW.completed = 1
+                                     THEN CAST(strftime('%s', 'now') AS INTEGER) * 1000
+                                     ELSE NULL
+                                END
+                        WHERE task_id = NEW.id
+                          AND step_id IS NULL
+                          AND local_date = date('now', 'localtime');
+                    END
+                    """);
+
+            // Capture today's scheduled items not yet recorded.
+            // Existing snapshots must not be overwritten.
+            statement.executeUpdate("""
+                    INSERT OR IGNORE INTO daily_plan_items (
+                        local_date, item_key, task_id, step_id,
+                        task_title, step_title, category_name,
+                        planned_minutes, completed,
+                        recorded_at_ms, completed_at_ms
+                    )
+                    SELECT
+                        date('now', 'localtime'),
+                        CASE WHEN s.id IS NULL
+                             THEN 'TASK:' || t.id
+                             ELSE 'STEP:' || s.id END,
+                        t.id,
+                        s.id,
+                        t.title,
+                        s.title,
+                        COALESCE(c.category_name, 'General'),
+                        CASE WHEN s.id IS NULL
+                             THEN t.estimated_minutes
+                             ELSE s.estimated_minutes END,
+                        CASE WHEN s.id IS NULL
+                             THEN t.completed
+                             ELSE s.completed END,
+                        CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+                        NULL
+                    FROM tasks t
+                    LEFT JOIN task_steps s ON s.task_id = t.id
+                    LEFT JOIN task_category_links c ON c.task_id = t.id
+                    WHERE t.planned_date = date('now', 'localtime')
+                      AND (
+                          CASE WHEN s.id IS NULL
+                               THEN t.estimated_minutes
+                               ELSE s.estimated_minutes END
+                      ) > 0
+                    """);
+
+            statement.executeUpdate("""
+                    CREATE VIEW IF NOT EXISTS daily_completion_snapshot AS
+                    WITH effective_items AS (
+                        SELECT
+                            d.local_date,
+                            d.task_id,
+                            d.planned_minutes,
+                            d.completed
+                        FROM daily_plan_items d
+                        WHERE d.step_id IS NOT NULL
+                           OR NOT EXISTS (
+                               SELECT 1
+                               FROM daily_plan_items s
+                               WHERE s.local_date = d.local_date
+                                 AND s.task_id = d.task_id
+                                 AND s.step_id IS NOT NULL
+                           )
+                    ),
+                    per_task AS (
+                        SELECT
+                            local_date,
+                            task_id,
+                            SUM(planned_minutes) AS planned,
+                            SUM(
+                                CASE WHEN completed = 1
+                                     THEN planned_minutes
+                                     ELSE 0 END
+                            ) AS completed
+                        FROM effective_items
+                        GROUP BY local_date, task_id
+                    )
+                    SELECT
+                        local_date,
+                        SUM(planned) AS planned_minutes,
+                        SUM(completed) AS completed_minutes
+                    FROM per_task
+                    GROUP BY local_date
+                    """);
+
+            statement.executeUpdate("""
+                    CREATE VIEW IF NOT EXISTS daily_completion_effective AS
+                    WITH effective_items AS (
+                        SELECT
+                            d.local_date,
+                            d.task_id,
+                            d.completed,
+                            COALESCE(
+                                (
+                                    SELECT e.new_planned_minutes
+                                    FROM plan_change_events e
+                                    WHERE e.event_type = 'CORRECT_PLAN'
+                                      AND e.affected_date = d.local_date
+                                      AND e.item_key = d.item_key
+                                    ORDER BY e.id DESC
+                                    LIMIT 1
+                                ),
+                                d.planned_minutes
+                            ) AS effective_minutes
+                        FROM daily_plan_items d
+                        WHERE d.step_id IS NOT NULL
+                           OR NOT EXISTS (
+                               SELECT 1
+                               FROM daily_plan_items s
+                               WHERE s.local_date = d.local_date
+                                 AND s.task_id = d.task_id
+                                 AND s.step_id IS NOT NULL
+                           )
+                    ),
+                    per_task AS (
+                        SELECT
+                            local_date,
+                            task_id,
+                            SUM(effective_minutes) AS planned,
+                            SUM(
+                                CASE WHEN completed = 1
+                                     THEN effective_minutes
+                                     ELSE 0 END
+                            ) AS completed
+                        FROM effective_items
+                        WHERE effective_minutes > 0
+                        GROUP BY local_date, task_id
+                    )
+                    SELECT
+                        local_date,
+                        SUM(planned) AS planned_minutes,
+                        SUM(completed) AS completed_minutes
+                    FROM per_task
+                    GROUP BY local_date
+                    """);
+
+            statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS completion_observations_v2 (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        observed_at_ms INTEGER NOT NULL,
+                        local_date TEXT NOT NULL,
+                        planned_minutes INTEGER NOT NULL,
+                        completed_minutes INTEGER NOT NULL
+                    )
+                    """);
+
+            statement.executeUpdate("""
+                    CREATE INDEX IF NOT EXISTS idx_completion_v2_date
+                    ON completion_observations_v2(local_date, id)
+                    """);
+
+            String recordV2 = """
+                    INSERT INTO completion_observations_v2
+                        (observed_at_ms, local_date,
+                         planned_minutes, completed_minutes)
+                    SELECT
+                        CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+                        date('now', 'localtime'),
+                        v.planned_minutes,
+                        v.completed_minutes
+                    FROM (
+                        SELECT
+                            COALESCE((
+                                SELECT planned_minutes
+                                FROM daily_completion_effective
+                                WHERE local_date = date('now', 'localtime')
+                            ), 0) AS planned_minutes,
+                            COALESCE((
+                                SELECT completed_minutes
+                                FROM daily_completion_effective
+                                WHERE local_date = date('now', 'localtime')
+                            ), 0) AS completed_minutes
+                    ) v
+                    WHERE NOT EXISTS (
+                        SELECT 1
+                        FROM completion_observations_v2 o
+                        WHERE o.id = (
+                            SELECT MAX(id)
+                            FROM completion_observations_v2
+                            WHERE local_date = date('now', 'localtime')
+                        )
+                          AND o.planned_minutes = v.planned_minutes
+                          AND o.completed_minutes = v.completed_minutes
+                    )
+                    """;
+
+            for (String operation : new String[] {
+                    "INSERT", "UPDATE", "DELETE" }) {
+
+                String row = operation.equals("DELETE") ? "OLD" : "NEW";
+
+                String triggerName = "trg_v2_daily_plan_"
+                        + operation.toLowerCase(java.util.Locale.ROOT);
+
+                statement.executeUpdate(
+                        "DROP TRIGGER IF EXISTS " + triggerName);
+
+                statement.executeUpdate(
+                        "CREATE TRIGGER " + triggerName
+                                + " AFTER " + operation
+                                + " ON daily_plan_items"
+                                + " WHEN " + row
+                                + ".local_date = date('now', 'localtime')"
+                                + " BEGIN " + recordV2 + "; END");
+            }
+
+            statement.executeUpdate(
+                    "DROP TRIGGER IF EXISTS trg_v2_correct_plan_insert");
+
+            statement.executeUpdate(
+                    "CREATE TRIGGER trg_v2_correct_plan_insert "
+                            + "AFTER INSERT ON plan_change_events "
+                            + "WHEN NEW.event_type = 'CORRECT_PLAN' "
+                            + "AND NEW.affected_date = date('now', 'localtime') "
+                            + "BEGIN " + recordV2 + "; END");
+
+            // Record the current baseline once on application startup.
+            statement.executeUpdate(recordV2);
 
             // Capture the baseline of the current day.
             statement.executeUpdate(recordObservation);

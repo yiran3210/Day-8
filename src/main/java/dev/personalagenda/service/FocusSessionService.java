@@ -24,6 +24,13 @@ public final class FocusSessionService {
 
     private Duration accumulated = Duration.ZERO;
 
+    private Runnable onSessionChanged = () -> {
+    };
+
+    public void setOnSessionChanged(Runnable listener) {
+        this.onSessionChanged = Objects.requireNonNull(listener);
+    }
+
     public FocusSessionService(WorkSessionRepository repository) {
         this.repository = Objects.requireNonNull(repository);
     }
@@ -58,6 +65,24 @@ public final class FocusSessionService {
         activeSession = session;
         accumulated = Duration.ZERO;
 
+        onSessionChanged.run();
+
+        return session;
+    }
+
+    public WorkSession startUnlinked(String title)
+            throws SQLException {
+
+        if (state() != State.IDLE) {
+            throw new IllegalStateException(
+                    "Finish the current focus process first.");
+        }
+
+        WorkSession session = repository.startUnlinked(title);
+
+        activeSession = session;
+        accumulated = Duration.ZERO;
+
         return session;
     }
 
@@ -81,6 +106,8 @@ public final class FocusSessionService {
 
         pausedSession = activeSession;
         activeSession = null;
+
+        onSessionChanged.run();
     }
 
     // Continue the same Task/Step with a new database row.
@@ -109,6 +136,25 @@ public final class FocusSessionService {
         activeSession = session;
         pausedSession = null;
 
+        onSessionChanged.run();
+
+        return session;
+    }
+
+    public WorkSession resumeUnlinked()
+            throws SQLException {
+
+        if (state() != State.PAUSED
+                || pausedSession.taskId() != null) {
+            throw new IllegalStateException(
+                    "No paused unlinked Focus Session to resume.");
+        }
+
+        WorkSession session = repository.startUnlinked(pausedSession.taskTitle());
+
+        activeSession = session;
+        pausedSession = null;
+
         return session;
     }
 
@@ -127,6 +173,8 @@ public final class FocusSessionService {
         activeSession = null;
         pausedSession = null;
         accumulated = Duration.ZERO;
+
+        onSessionChanged.run();
     }
 
     // Read elapsed work time without querying SQLite.

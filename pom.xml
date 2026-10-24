@@ -8,7 +8,7 @@
 
     <groupId>dev.personalagenda</groupId>
     <artifactId>personal-agenda</artifactId>
-    <version>0.2.0</version>
+    <version>0.2.1</version>
 
     <name>Day 8</name>
     <description>
@@ -34,6 +34,13 @@
             <artifactId>javafx-controls</artifactId>
             <version>${javafx.version}</version>
         </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.13.4</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -50,6 +57,16 @@
                 <version>0.0.8</version>
                 <configuration>
                     <mainClass>dev.personalagenda.App</mainClass>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.6.0</version>
+                <configuration>
+                    <forkCount>1</forkCount>
+                    <reuseForks>false</reuseForks>
                 </configuration>
             </plugin>
         </plugins>

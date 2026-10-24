@@ -3,14 +3,21 @@ package dev.personalagenda;
 import dev.personalagenda.model.Task;
 import dev.personalagenda.model.TimeBlock;
 import dev.personalagenda.model.TaskStep;
+import dev.personalagenda.model.WorkSession;
 import dev.personalagenda.data.Database;
 import dev.personalagenda.data.TaskRepository;
 import dev.personalagenda.data.TaskStepRepository;
 import dev.personalagenda.data.TimeBlockRepository;
 import dev.personalagenda.data.CategoryRepository;
 import dev.personalagenda.data.WorkSessionRepository;
+import dev.personalagenda.data.DailyPlanRepository;
+import dev.personalagenda.data.UiSortOrderRepository;
+import dev.personalagenda.view.UiSortControls;
 import dev.personalagenda.view.TimelineView;
+import dev.personalagenda.view.MinuteSpinnerSupport;
+import dev.personalagenda.view.CorrectPlanDialog;
 import dev.personalagenda.view.TaskStepsView;
+import dev.personalagenda.view.ScheduleTimeValidation;
 import dev.personalagenda.view.ProjectDashboard;
 import dev.personalagenda.view.FloatingWidget;
 import dev.personalagenda.view.AppIcons;
@@ -18,6 +25,7 @@ import dev.personalagenda.view.UiLayout;
 import dev.personalagenda.view.InsightsView;
 import dev.personalagenda.view.DataLocationDialog;
 import dev.personalagenda.service.FocusSessionService;
+import dev.personalagenda.service.AutoScheduleDuration;
 
 // import java.util.ArrayList;
 import java.util.List;
@@ -30,6 +38,8 @@ import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.Duration;
+import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.io.IOException;
@@ -44,11 +54,13 @@ import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ColorPicker;
 import javafx.scene.control.Separator;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.MenuButton;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.OverrunStyle;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TitledPane;
+import javafx.scene.control.Tooltip;
 import javafx.scene.control.Button;
 import javafx.scene.control.Spinner;
 import javafx.scene.control.ProgressBar;
@@ -78,11 +90,17 @@ public class App extends Application {
     private final Map<String, String> categoryColors = new LinkedHashMap<>();
 
     private final TaskStepRepository taskStepRepository = new TaskStepRepository();
+    private final DailyPlanRepository dailyPlanRepository = new DailyPlanRepository();
+    private final UiSortOrderRepository uiSort = new UiSortOrderRepository();
 
     private final Label dailyProgressDetails = new Label();
 
     private BiConsumer<Task, TaskStep> scheduleRequest;
     private BiConsumer<Task, TaskStep> focusRequest;
+    private FocusSessionService focusService;
+
+    private Runnable afterPlanningDataChanged = () -> {
+    };
 
     @Override
     public void start(Stage stage) throws Exception {
@@ -128,6 +146,14 @@ public class App extends Application {
 
         Button addButton = new Button("Add");
 
+        TitledPane quickAddPane = new TitledPane("+ Quick Add", null);
+        quickAddPane.setExpanded(true);
+        quickAddPane.setAnimated(false);
+        quickAddPane.setMaxWidth(Double.MAX_VALUE);
+
+        Button quickFocusButton = new Button("Quick Add & Focus");
+        quickFocusButton.setMinWidth(Region.USE_PREF_SIZE);
+
         VBox taskList = new VBox(8);
 
         ComboBox<String> viewFilter = new ComboBox<>();
@@ -135,6 +161,7 @@ public class App extends Application {
         viewFilter.setValue("Today");
 
         Spinner<Integer> durationInput = new Spinner<>(15, 480, 60, 15);
+        MinuteSpinnerSupport.enable(durationInput);
         durationInput.setPrefWidth(100);
 
         DatePicker plannedDateInput = new DatePicker(LocalDate.now());
@@ -151,8 +178,38 @@ public class App extends Application {
 
         refreshTaskList(tasks, taskList, progressLabel, progressBar, repository, viewFilter.getValue());
 
+        Button resetTaskOrder = new Button("Default Order");
+
+        resetTaskOrder.setOnAction(event -> {
+            String scope = taskOrderScope(viewFilter.getValue());
+
+            if (scope == null) {
+                return;
+            }
+
+            try {
+                uiSort.reset(scope);
+                refreshTaskList(
+                        tasks, taskList,
+                        progressLabel, progressBar,
+                        repository, viewFilter.getValue());
+
+            } catch (SQLException ex) {
+                Alert alert = new Alert(Alert.AlertType.ERROR);
+                alert.setHeaderText("Unable to reset Task order");
+                alert.setContentText(ex.getMessage());
+                alert.showAndWait();
+            }
+        });
+
         viewFilter.setOnAction(event -> {
-            refreshTaskList(tasks, taskList, progressLabel, progressBar, repository, viewFilter.getValue());
+            resetTaskOrder.setDisable(
+                    taskOrderScope(viewFilter.getValue()) == null);
+
+            refreshTaskList(
+                    tasks, taskList,
+                    progressLabel, progressBar,
+                    repository, viewFilter.getValue());
         });
 
         addButton.setOnAction(event -> {
@@ -163,14 +220,24 @@ public class App extends Application {
                 return;
             }
 
-            int minutes = durationInput.getValue();
+            int minutes;
+
+            try {
+                minutes = MinuteSpinnerSupport.read(durationInput);
+            } catch (IllegalArgumentException ex) {
+                Alert alert = new Alert(Alert.AlertType.WARNING);
+                alert.setHeaderText("Invalid task duration");
+                alert.setContentText(ex.getMessage());
+                alert.showAndWait();
+                return;
+            }
+
             Task newTask = new Task(taskTitle, minutes);
             newTask.setPlannedDate(plannedDateInput.getValue());
 
             try {
-                repository.insert(newTask);
-                categoryRepository.assign(
-                        newTask.getId(),
+                repository.insert(
+                        newTask,
                         taskCategoryInput.getValue());
             } catch (SQLException e) {
                 e.printStackTrace();
@@ -191,6 +258,10 @@ public class App extends Application {
             taskInput.clear();
 
             updateProgress(tasks, progressLabel, progressBar, viewFilter.getValue());
+
+            quickAddPane.setText("+ Quick Add · Saved");
+            quickAddPane.setExpanded(false);
+
         });
 
         taskInput.setOnAction(event -> addButton.fire());
@@ -210,11 +281,14 @@ public class App extends Application {
         progressBar.setManaged(true);
         progressBar.getStyleClass().add("daily-progress");
 
+        Button correctPlanButton = new Button("Correct Plan…");
+
         VBox dailyProgressBox = new VBox(
                 8,
                 progressLabel,
                 progressBar,
-                dailyProgressDetails);
+                dailyProgressDetails,
+                correctPlanButton);
 
         dailyProgressBox.setFillWidth(true);
         dailyProgressBox.setMaxWidth(Double.MAX_VALUE);
@@ -254,6 +328,31 @@ public class App extends Application {
         Label scheduleTitle = new Label("Day Plan");
 
         HBox scheduleHeader = new HBox(12, scheduleTitle, scheduleDateInput);
+
+        Button resetDayPlanOrder = new Button("Default Order");
+
+        resetDayPlanOrder.setOnAction(event -> {
+            LocalDate date = scheduleDateInput.getValue();
+
+            if (date == null) {
+                return;
+            }
+
+            try {
+                uiSort.reset("dayplan:" + date);
+                refreshSchedule(
+                        blockRepository, timeline,
+                        scheduledBlocks, date);
+
+            } catch (SQLException ex) {
+                Alert alert = new Alert(Alert.AlertType.ERROR);
+                alert.setHeaderText("Unable to reset Day Plan order");
+                alert.setContentText(ex.getMessage());
+                alert.showAndWait();
+            }
+        });
+
+        scheduleHeader.getChildren().add(resetDayPlanOrder);
 
         Region scheduleHeaderSpacer = new Region();
 
@@ -470,7 +569,7 @@ public class App extends Application {
         HBox nextDayRow = new HBox(8, nextDayInput);
         nextDayRow.setAlignment(Pos.CENTER_LEFT);
 
-        CheckBox autoEndInput = new CheckBox("Auto end from estimate");
+        CheckBox autoEndInput = new CheckBox("Auto end from estimated duration");
 
         autoEndInput.getStyleClass().add("schedule-option");
         nextDayInput.getStyleClass().add("schedule-option");
@@ -479,37 +578,72 @@ public class App extends Application {
 
         nextDayRow.getChildren().add(0, autoEndInput);
 
+        Label scheduleBudgetStatus = new Label();
+        scheduleBudgetStatus.setWrapText(true);
+
         Runnable recalculateEnd = () -> {
 
-            if (!autoEndInput.isSelected()
-                    || blockTypeInput.getValue() != TimeBlock.Type.TASK
+            if (blockTypeInput.getValue() != TimeBlock.Type.TASK
                     || linkedTaskInput.getValue() == null
                     || scheduleDateInput.getValue() == null) {
-                return;
-            }
 
-            int minutes = linkedStepInput.getValue() != null
-                    ? linkedStepInput.getValue().estimatedMinutes()
-                    : linkedTaskInput.getValue().getEstimatedMinutes();
-
-            if (minutes <= 0) {
+                scheduleBudgetStatus.setText("");
                 return;
             }
 
             try {
+                Task task = linkedTaskInput.getValue();
+
+                long scheduled = blockRepository.sumScheduledMinutes(
+                        task.getId(), null);
+
+                long budget = getTaskPlannedMinutes(task);
+
+                long suggested = suggestedAutoScheduleMinutes(
+                        task,
+                        linkedStepInput.getValue());
+
+                long scheduledOnDate = blockRepository.sumScheduledMinutesForDate(
+                        task.getId(),
+                        null,
+                        scheduleDateInput.getValue());
+
+                scheduleBudgetStatus.setText(
+                        "On " + scheduleDateInput.getValue()
+                                + ": " + scheduledOnDate + " min"
+                                + " · Task history: " + scheduled + " min"
+                                + " · Task estimate: " + budget + " min"
+                                + " · Suggested: " + suggested + " min");
+
+                if (!autoEndInput.isSelected()) {
+                    return;
+                }
+
+                if (suggested <= 0) {
+                    scheduleBudgetStatus.setText(
+                            "No unfinished estimated work for this selection. "
+                                    + "Uncheck Auto end to enter a manual duration.");
+                    return;
+                }
+
                 LocalDateTime start = scheduleDateInput.getValue().atTime(
                         LocalTime.parse(startTimeInput.getText().trim()));
 
-                LocalDateTime end = start.plusMinutes(minutes);
+                LocalDateTime end = start.plusMinutes(suggested);
 
                 endTimeInput.setText(end.toLocalTime().toString());
 
                 nextDayInput.setSelected(
                         end.toLocalDate().isAfter(start.toLocalDate()));
 
-            } catch (DateTimeParseException ex) {
-                // Wait until the user finishes entering a valid time.
+            } catch (DateTimeParseException ignored) {
+                // Wait until time input is valid.
+            } catch (SQLException ex) {
+                scheduleBudgetStatus.setText(
+                        "Unable to calculate scheduled minutes.");
+                ex.printStackTrace();
             }
+
         };
 
         Runnable updateAutoMode = () -> {
@@ -549,6 +683,8 @@ public class App extends Application {
 
         Label blockStatus = new Label();
 
+        TitledPane addActivityPane = new TitledPane("+ Add activity", null);
+
         saveBlockButton.setOnAction(event -> {
 
             String titleText = blockTitleInput.getText().trim();
@@ -577,16 +713,18 @@ public class App extends Application {
                     end = end.plusDays(1);
                 }
 
-                if (!end.isAfter(start)) {
-                    blockStatus.setText(
-                            "End must be after start.");
-                    return;
-                }
-
                 String linkedTaskId = blockTypeInput.getValue() == TimeBlock.Type.TASK
                         && linkedTaskInput.getValue() != null
                                 ? linkedTaskInput.getValue().getId()
                                 : null;
+
+                if (blockTypeInput.getValue() == TimeBlock.Type.TASK
+                        && linkedTaskId == null) {
+
+                    blockStatus.setText(
+                            "Select a Task, or use FIXED for an unlinked activity.");
+                    return;
+                }
 
                 if (linkedTaskId != null && !repository.exists(linkedTaskId)) {
                     linkedTaskInput.setValue(null);
@@ -610,6 +748,36 @@ public class App extends Application {
                     return;
                 }
 
+                if (autoEndInput.isSelected() && linkedTaskId != null) {
+
+                    long suggested = suggestedAutoScheduleMinutes(
+                            linkedTaskInput.getValue(),
+                            linkedStepInput.getValue());
+
+                    if (suggested <= 0) {
+                        blockStatus.setText(
+                                "No unfinished estimated work for this selection. "
+                                        + "Choose an unfinished Task or Step, "
+                                        + "or turn off Auto end.");
+                        return;
+                    }
+
+                    end = start.plusMinutes(suggested);
+                }
+
+                if (!end.isAfter(start)) {
+                    blockStatus.setText("End must be after start.");
+                    return;
+                }
+
+                String dstError = ScheduleTimeValidation.check(
+                        start, end, ZoneId.systemDefault());
+
+                if (dstError != null) {
+                    blockStatus.setText(dstError);
+                    return;
+                }
+
                 TimeBlock block = new TimeBlock(
                         titleText,
                         start,
@@ -618,13 +786,22 @@ public class App extends Application {
                         linkedTaskId,
                         linkedStepId);
 
+                if (!confirmActivityOverlap(blockRepository, block)) {
+                    blockStatus.setText(
+                            "Not saved: schedule overlap was cancelled.");
+                    return;
+                }
+
                 blockRepository.insert(block);
 
-                refreshSchedule(blockRepository, timeline, scheduledBlocks, today);
+                afterPlanningDataChanged.run();
 
                 blockTitleInput.clear();
                 linkedTaskInput.setValue(null);
                 blockStatus.setText("Scheduled: " + titleText);
+
+                addActivityPane.setText("+ Add activity · Saved");
+                addActivityPane.setExpanded(false);
 
             } catch (DateTimeParseException ex) {
                 blockStatus.setText("Use time format HH:mm.");
@@ -725,7 +902,10 @@ public class App extends Application {
         // Row 5: save action, aligned to the right
         saveBlockButton.setMinWidth(Region.USE_PREF_SIZE);
 
-        scheduleFormGrid.add(saveBlockButton, 3, 5);
+        scheduleFormGrid.add(
+                scheduleBudgetStatus, 0, 5, 4, 1);
+
+        scheduleFormGrid.add(saveBlockButton, 3, 6);
 
         GridPane.setHalignment(
                 saveBlockButton,
@@ -736,9 +916,7 @@ public class App extends Application {
                 scheduleFormGrid,
                 blockStatus);
 
-        TitledPane addActivityPane = new TitledPane(
-                "+ Add activity",
-                activityForm);
+        addActivityPane.setContent(activityForm);
 
         activityForm.setMaxHeight(Region.USE_PREF_SIZE);
 
@@ -750,6 +928,13 @@ public class App extends Application {
 
         addActivityPane.setExpanded(false);
         addActivityPane.setAnimated(false);
+
+        addActivityPane.expandedProperty().addListener(
+                (obs, wasExpanded, expanded) -> {
+                    if (expanded) {
+                        addActivityPane.setText("+ Add activity");
+                    }
+                });
 
         Label activitiesTitle = new Label("Planned Activities");
 
@@ -873,21 +1058,34 @@ public class App extends Application {
         categoryManager.setAnimated(false);
         categoryManager.setMaxWidth(Double.MAX_VALUE);
 
-        Label quickAddTitle = new Label("Quick Add");
         Label taskListTitle = new Label("Task List");
-
-        quickAddTitle.getStyleClass().add("section-heading");
         taskListTitle.getStyleClass().add("section-heading");
 
+        HBox quickFocusRow = new HBox(quickFocusButton);
+        quickFocusRow.setAlignment(Pos.CENTER_RIGHT);
+
         VBox taskComposer = new VBox(
-                10, quickAddTitle, inputRow, dateRow);
+                10,
+                inputRow,
+                dateRow,
+                quickFocusRow);
 
         taskComposer.getStyleClass().add("task-composer");
+
+        quickAddPane.setContent(taskComposer);
+
+        quickAddPane.expandedProperty().addListener(
+                (obs, wasExpanded, expanded) -> {
+                    if (expanded) {
+                        quickAddPane.setText("+ Quick Add");
+                    }
+                });
 
         Region toolbarSpacer = new Region();
 
         HBox taskToolbar = new HBox(
-                12, taskListTitle, toolbarSpacer, viewFilter);
+                12, taskListTitle, toolbarSpacer,
+                resetTaskOrder, viewFilter);
 
         HBox.setHgrow(
                 toolbarSpacer, Priority.ALWAYS);
@@ -897,7 +1095,7 @@ public class App extends Application {
 
         VBox taskPanel = new VBox(
                 16,
-                taskComposer,
+                quickAddPane,
                 categoryManager,
                 taskToolbar,
                 taskList);
@@ -1075,7 +1273,29 @@ public class App extends Application {
         AppIcons.apply(stage);
         stage.setScene(scene);
 
-        FocusSessionService focusService = new FocusSessionService(new WorkSessionRepository());
+        focusService = new FocusSessionService(new WorkSessionRepository());
+
+        timeline.setFocusSessionService(focusService);
+
+        focusService.setOnSessionChanged(() -> {
+
+            LocalDate selectedDate = scheduleDateInput.getValue();
+
+            if (selectedDate == null) {
+                return;
+            }
+
+            try {
+                refreshSchedule(
+                        blockRepository,
+                        timeline,
+                        scheduledBlocks,
+                        selectedDate);
+
+            } catch (SQLException ex) {
+                ex.printStackTrace();
+            }
+        });
 
         FloatingWidget floatingWidget = new FloatingWidget(
                 stage,
@@ -1099,6 +1319,56 @@ public class App extends Application {
                     }
                 },
                 focusService);
+
+        afterPlanningDataChanged = () -> {
+
+            LocalDate selectedDate = scheduleDateInput.getValue();
+
+            if (selectedDate != null) {
+
+                try {
+                    refreshSchedule(
+                            blockRepository,
+                            timeline,
+                            scheduledBlocks,
+                            selectedDate);
+
+                } catch (SQLException ex) {
+
+                    Alert alert = new Alert(Alert.AlertType.ERROR);
+                    alert.setTitle("Day 8 · Schedule");
+                    alert.setHeaderText(
+                            "Changes were saved, but Schedule refresh failed.");
+                    alert.setContentText(ex.getMessage());
+                    alert.show();
+
+                    ex.printStackTrace();
+                }
+            }
+
+            floatingWidget.refreshAfterExternalChange();
+        };
+
+        correctPlanButton.setOnAction(event -> {
+            if (!CorrectPlanDialog.show(stage)) {
+                return;
+            }
+
+            // 1. Main Daily Progress
+            updateProgress(
+                    tasks,
+                    progressLabel,
+                    progressBar,
+                    viewFilter.getValue());
+
+            // 2. Mini Widget
+            floatingWidget.refreshFromDatabase();
+
+            // 3. Insights, when visible
+            if (insightsTab.isSelected()) {
+                insightsView.reload();
+            }
+        });
 
         focusRequest = (requestedTask, requestedStep) -> {
             try {
@@ -1153,6 +1423,85 @@ public class App extends Application {
                         "Unable to start Focus: " + ex.getMessage());
             }
         };
+
+        quickFocusButton.setOnAction(event -> {
+
+            // 1. Do not create another task if Focus is busy.
+            if (focusService.state() != FocusSessionService.State.IDLE) {
+                showFocusMessage(
+                        stage,
+                        "Finish the current Focus Session first.");
+                floatingWidget.show();
+                return;
+            }
+
+            String titleText = taskInput.getText().trim();
+
+            if (titleText.isEmpty()) {
+                showFocusMessage(stage, "Enter a task title first.");
+                taskInput.requestFocus();
+                return;
+            }
+
+            // 2. Commit and validate the editable Spinner text.
+            int minutes;
+
+            try {
+                minutes = MinuteSpinnerSupport.read(durationInput);
+            } catch (IllegalArgumentException ex) {
+                showFocusMessage(stage, ex.getMessage());
+                return;
+            }
+
+            try {
+                // 3. Respect unfinished-session recovery.
+                if (new WorkSessionRepository().findActive().isPresent()) {
+                    showFocusMessage(
+                            stage,
+                            "Resolve the unfinished Focus Session first.");
+                    floatingWidget.show();
+                    return;
+                }
+
+                // 4. Create an unscheduled Task.
+                Task quickTask = new Task(titleText, minutes);
+                quickTask.setPlannedDate(null);
+
+                String category = taskCategoryInput.getValue();
+
+                repository.insert(
+                        quickTask,
+                        category == null ? "General" : category);
+
+                // 5. Refresh the Task list.
+                tasks.add(quickTask);
+                taskInput.clear();
+
+                viewFilter.setValue("Backlog");
+
+                refreshTaskList(
+                        tasks,
+                        taskList,
+                        progressLabel,
+                        progressBar,
+                        repository,
+                        viewFilter.getValue());
+
+                // 6. Start Focus using the existing shared service.
+                focusRequest.accept(quickTask, null);
+
+                if (focusService.state() == FocusSessionService.State.RUNNING) {
+                    quickAddPane.setText("+ Quick Add · Focus started");
+                    quickAddPane.setExpanded(false);
+                }
+
+            } catch (SQLException ex) {
+                showFocusMessage(
+                        stage,
+                        "Unable to create Quick Focus Task: "
+                                + ex.getMessage());
+            }
+        });
 
         Button openWidgetButton = new Button("Open Mini Widget");
 
@@ -1284,6 +1633,65 @@ public class App extends Application {
         }
     }
 
+    private boolean confirmActivityOverlap(
+            TimeBlockRepository repository,
+            TimeBlock candidate) throws SQLException {
+
+        List<TimeBlock> overlaps = repository.findOverlaps(
+                candidate.start(),
+                candidate.end(),
+                candidate.id());
+
+        if (overlaps.isEmpty()) {
+            return true;
+        }
+
+        List<String> descriptions = overlaps.stream()
+                .limit(6)
+                .map(existing -> {
+                    LocalDateTime from = candidate.start()
+                            .isAfter(existing.start())
+                                    ? candidate.start()
+                                    : existing.start();
+
+                    LocalDateTime to = candidate.end()
+                            .isBefore(existing.end())
+                                    ? candidate.end()
+                                    : existing.end();
+
+                    long minutes = Duration.between(
+                            from, to).toMinutes();
+
+                    return existing.title()
+                            + "\n"
+                            + from + " → " + to
+                            + " (" + minutes + " min overlap)";
+                })
+                .toList();
+
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.setTitle("Day 8 · Schedule Conflict");
+        alert.setHeaderText(
+                "This activity overlaps with "
+                        + overlaps.size() + " existing activity(s).");
+
+        alert.setContentText(
+                String.join("\n\n", descriptions)
+                        + (overlaps.size() > 6
+                                ? "\n\n...and more conflicts."
+                                : "")
+                        + "\n\nKeep the overlapping schedule?");
+
+        ButtonType keepButton = new ButtonType("Keep Overlap");
+
+        alert.getButtonTypes().setAll(
+                keepButton,
+                ButtonType.CANCEL);
+
+        return alert.showAndWait()
+                .orElse(ButtonType.CANCEL) == keepButton;
+    }
+
     private void refreshSchedule(
             TimeBlockRepository repository,
             TimelineView timeline,
@@ -1310,12 +1718,23 @@ public class App extends Application {
                     categoryColors.getOrDefault(category, "#DCEAFE"));
         }
 
+        ZoneId zone = ZoneId.systemDefault();
+
+        List<WorkSession> actualSessions = new WorkSessionRepository().findFinishedOverlapping(
+                date.atStartOfDay(zone).toInstant(),
+                date.plusDays(1).atStartOfDay(zone).toInstant());
+
         timeline.setTaskColors(taskColors);
-        timeline.showDate(date, blocks);
+        timeline.showDate(date, blocks, actualSessions);
 
         blockList.getChildren().clear();
 
-        for (TimeBlock block : blocks) {
+        List<TimeBlock> displayBlocks = uiSort.ordered(
+                "dayplan:" + date,
+                blocks,
+                TimeBlock::id);
+
+        for (TimeBlock block : displayBlocks) {
 
             String timeText = block.start().toLocalTime()
                     + "–"
@@ -1327,8 +1746,16 @@ public class App extends Application {
                 timeText += " (+next day)";
             }
 
+            List<TimeBlock> conflicts = repository.findOverlaps(
+                    block.start(),
+                    block.end(),
+                    block.id());
+
+            boolean hasOverlap = !conflicts.isEmpty();
+
             Label label = new Label(
-                    timeText + "  ·  " + block.title());
+                    (hasOverlap ? "⚠ " : "")
+                            + timeText + "  ·  " + block.title());
 
             if (block.taskId() != null) {
                 label.setText(label.getText() + "  · linked");
@@ -1339,14 +1766,60 @@ public class App extends Application {
             label.setTextOverrun(
                     javafx.scene.control.OverrunStyle.ELLIPSIS);
 
-            label.setTooltip(new javafx.scene.control.Tooltip(
-                    block.title() + "\n"
-                            + block.start() + " → " + block.end()));
+            String tooltip = block.title() + "\n"
+                    + block.start() + " → " + block.end();
+
+            if (hasOverlap) {
+                tooltip += "\n\n⚠ Overlaps with:\n"
+                        + String.join("\n",
+                                conflicts.stream()
+                                        .map(TimeBlock::title)
+                                        .toList());
+            }
+
+            label.setTooltip(
+                    new javafx.scene.control.Tooltip(tooltip));
 
             HBox.setHgrow(label, Priority.ALWAYS);
 
             Button editButton = new Button("Edit");
             Button deleteButton = new Button("×");
+
+            String dstIssue = ScheduleTimeValidation.check(
+                    block.start(),
+                    block.end(),
+                    ZoneId.systemDefault());
+
+            if (dstIssue != null) {
+                label.setText("⚠ DST · " + label.getText());
+
+                String previousTooltip = label.getTooltip() == null
+                        ? ""
+                        : label.getTooltip().getText();
+
+                label.setTooltip(new Tooltip(
+                        previousTooltip
+                                + "\n\nDST WARNING:\n"
+                                + dstIssue
+                                + "\n\nUse Edit to correct the date/time."));
+            }
+
+            boolean unlinkedTaskBlock = block.type() == TimeBlock.Type.TASK
+                    && block.taskId() == null;
+
+            if (unlinkedTaskBlock) {
+                label.setText("⚠ Unlinked · " + label.getText());
+
+                String previousTooltip = label.getTooltip() == null
+                        ? ""
+                        : label.getTooltip().getText();
+
+                label.setTooltip(new Tooltip(
+                        previousTooltip
+                                + "\n\nThis TASK activity has no linked Task."
+                                + "\nIts original Task or Step may have been deleted."
+                                + "\nEdit to relink it or change its type."));
+            }
 
             HBox row = new HBox(8, label, editButton, deleteButton);
 
@@ -1481,10 +1954,32 @@ public class App extends Application {
                                     ? linkedTaskEdit.getValue().getId()
                                     : null;
 
+                    if (typeEdit.getValue() == TimeBlock.Type.TASK
+                            && editTaskId == null) {
+
+                        editStatus.setText(
+                                "This TASK activity needs a valid Task. "
+                                        + "Relink it, or change its type to FIXED.");
+                        return;
+                    }
+
                     String editStepId = editTaskId != null
                             && linkedStepEdit.getValue() != null
                                     ? linkedStepEdit.getValue().id()
                                     : null;
+
+                    boolean timeChanged = !newStart.equals(block.start())
+                            || !newEnd.equals(block.end());
+
+                    if (timeChanged) {
+                        String dstError = ScheduleTimeValidation.check(
+                                newStart, newEnd, ZoneId.systemDefault());
+
+                        if (dstError != null) {
+                            editStatus.setText(dstError);
+                            return;
+                        }
+                    }
 
                     TimeBlock updatedBlock = new TimeBlock(
                             block.id(),
@@ -1495,15 +1990,21 @@ public class App extends Application {
                             editTaskId,
                             editStepId);
 
+                    if (!confirmActivityOverlap(repository, updatedBlock)) {
+                        editStatus.setText(
+                                "Update cancelled: schedule overlap.");
+                        return;
+                    }
+
                     repository.update(updatedBlock);
 
-                    refreshSchedule(
-                            repository, timeline, blockList, date);
+                    afterPlanningDataChanged.run();
 
                 } catch (DateTimeParseException ex) {
                     editStatus.setText("Invalid time. Use HH:mm.");
                 } catch (SQLException ex) {
-                    editStatus.setText("Database update failed.");
+                    editStatus.setText(
+                            "Unable to save activity: " + ex.getMessage());
                     ex.printStackTrace();
                 }
             });
@@ -1512,17 +2013,60 @@ public class App extends Application {
                 try {
                     repository.delete(block.id());
 
-                    refreshSchedule(
-                            repository, timeline, blockList, date);
+                    afterPlanningDataChanged.run();
 
                 } catch (SQLException ex) {
+                    Alert alert = new Alert(Alert.AlertType.ERROR);
+                    alert.setTitle("Day 8 · Activity");
+                    alert.setHeaderText("Unable to delete activity");
+                    alert.setContentText(ex.getMessage());
+                    alert.showAndWait();
+
                     ex.printStackTrace();
                 }
             });
 
             VBox entry = new VBox(4, row, editor);
+
+            HBox sortControls = UiSortControls.attach(
+                    "dayplan:" + date,
+                    block.id(),
+                    entry,
+                    blockList,
+                    () -> {
+                        try {
+                            refreshSchedule(
+                                    repository, timeline, blockList, date);
+                        } catch (SQLException ex) {
+                            Alert alert = new Alert(Alert.AlertType.ERROR);
+                            alert.setHeaderText(
+                                    "Unable to refresh Activity order");
+                            alert.setContentText(ex.getMessage());
+                            alert.showAndWait();
+                        }
+                    },
+                    message -> {
+                        Alert alert = new Alert(Alert.AlertType.ERROR);
+                        alert.setHeaderText("Activity sorting failed");
+                        alert.setContentText(message);
+                        alert.showAndWait();
+                    });
+
+            row.getChildren().add(0, sortControls);
             blockList.getChildren().add(entry);
+
         }
+    }
+
+    private String taskOrderScope(String filter) {
+        LocalDate today = LocalDate.now();
+
+        return switch (filter) {
+            case "Today" -> "task:" + today;
+            case "Tomorrow" -> "task:" + today.plusDays(1);
+            case "Backlog" -> "task:backlog";
+            default -> null;
+        };
     }
 
     private boolean matchesFilter(Task task, String filter) {
@@ -1545,19 +2089,81 @@ public class App extends Application {
             List<Task> tasks, VBox taskList, Label progressLabel, ProgressBar progressBar, TaskRepository repository,
             String filter) {
 
-        taskList.getChildren().clear();
+        {
+            taskList.getChildren().clear();
 
-        for (Task task : tasks) {
-            if (!matchesFilter(task, filter)) {
-                continue;
+            List<Task> visibleTasks = tasks.stream()
+                    .filter(task -> matchesFilter(task, filter))
+                    .toList();
+
+            String scope = taskOrderScope(filter);
+
+            if (scope != null) {
+                try {
+                    visibleTasks = uiSort.ordered(
+                            scope,
+                            visibleTasks,
+                            Task::getId);
+
+                } catch (SQLException ex) {
+                    Alert alert = new Alert(Alert.AlertType.ERROR);
+                    alert.setHeaderText("Unable to load Task order");
+                    alert.setContentText(ex.getMessage());
+                    alert.showAndWait();
+                }
             }
 
-            VBox taskEntry = createTaskRow(task, tasks, taskList, progressLabel, progressBar, repository, filter);
+            for (Task task : visibleTasks) {
+                VBox taskEntry = createTaskRow(
+                        task, tasks, taskList,
+                        progressLabel, progressBar,
+                        repository, filter);
 
-            taskList.getChildren().add(taskEntry);
+                taskList.getChildren().add(taskEntry);
+            }
+
+            updateProgress(
+                    tasks, progressLabel, progressBar, filter);
         }
 
-        updateProgress(tasks, progressLabel, progressBar, filter);
+    }
+
+    private boolean allowDeleteFocusTarget(
+            String taskId,
+            String stepId) {
+
+        if (focusService == null) {
+            return true;
+        }
+
+        WorkSession session = focusService.activeSession();
+
+        if (session == null) {
+            session = focusService.pausedSession();
+        }
+
+        if (session == null) {
+            return true;
+        }
+
+        boolean protectedTarget = stepId == null
+                ? taskId.equals(session.taskId())
+                : stepId.equals(session.stepId());
+
+        if (!protectedTarget) {
+            return true;
+        }
+
+        Alert warning = new Alert(Alert.AlertType.WARNING);
+        warning.setTitle("Day 8 · Focus");
+        warning.setHeaderText("Cannot delete during Focus");
+        warning.setContentText(
+                "This Task or Step belongs to the current "
+                        + "Focus Session.\n\n"
+                        + "Stop Focus first, then delete it.");
+
+        warning.showAndWait();
+        return false;
     }
 
     private VBox createTaskRow(
@@ -1635,6 +2241,8 @@ public class App extends Application {
                             tasks, taskList,
                             progressLabel, progressBar,
                             repository, filter);
+
+                    afterPlanningDataChanged.run();
 
                 } catch (SQLException ex) {
                     ex.printStackTrace();
@@ -1742,6 +2350,7 @@ public class App extends Application {
                         Platform.runLater(() -> refreshTaskList(
                                 tasks, taskList, progressLabel,
                                 progressBar, repository, filter));
+                        afterPlanningDataChanged.run();
                     }
                 },
                 step -> {
@@ -1755,10 +2364,17 @@ public class App extends Application {
                     }
                 });
 
+        stepsView.setDeleteGuard(
+                step -> allowDeleteFocusTarget(
+                        task.getId(),
+                        step.id()));
+
         TextField taskTitleEdit = new TextField(task.getTitle());
 
         Spinner<Integer> taskMinutesEdit = new Spinner<>(
                 1, 1440, task.getEstimatedMinutes(), 5);
+
+        MinuteSpinnerSupport.enable(taskMinutesEdit);
 
         taskMinutesEdit.setPrefWidth(105);
 
@@ -1793,7 +2409,14 @@ public class App extends Application {
         saveTaskEdit.setOnAction(event -> {
 
             String title = taskTitleEdit.getText().trim();
-            int minutes = taskMinutesEdit.getValue();
+            int minutes;
+
+            try {
+                minutes = MinuteSpinnerSupport.read(taskMinutesEdit);
+            } catch (IllegalArgumentException ex) {
+                taskEditStatus.setText(ex.getMessage());
+                return;
+            }
 
             if (title.isEmpty()) {
                 taskEditStatus.setText("Task title is required.");
@@ -1814,6 +2437,8 @@ public class App extends Application {
                 updateProgress(
                         tasks, progressLabel, progressBar, filter);
 
+                afterPlanningDataChanged.run();
+
                 taskEditor.setVisible(false);
                 taskEditor.setManaged(false);
 
@@ -1825,6 +2450,28 @@ public class App extends Application {
 
         VBox taskEntry = new VBox(
                 6, taskRow, taskEditor, stepsView);
+
+        String sortScope = taskOrderScope(filter);
+
+        if (sortScope != null) {
+            HBox sortControls = UiSortControls.attach(
+                    sortScope,
+                    task.getId(),
+                    taskEntry,
+                    taskList,
+                    () -> refreshTaskList(
+                            tasks, taskList,
+                            progressLabel, progressBar,
+                            repository, filter),
+                    message -> {
+                        Alert alert = new Alert(Alert.AlertType.ERROR);
+                        alert.setHeaderText("Task sorting failed");
+                        alert.setContentText(message);
+                        alert.showAndWait();
+                    });
+
+            taskRow.getChildren().add(0, sortControls);
+        }
 
         checkBox.setOnAction(e -> {
 
@@ -1849,6 +2496,10 @@ public class App extends Application {
 
         deleteButton.setOnAction(e -> {
 
+            if (!allowDeleteFocusTarget(task.getId(), null)) {
+                return;
+            }
+
             try {
                 repository.delete(task.getId());
 
@@ -1856,7 +2507,13 @@ public class App extends Application {
                 taskList.getChildren().remove(taskEntry);
 
                 updateProgress(tasks, progressLabel, progressBar, filter);
+
+                afterPlanningDataChanged.run();
             } catch (SQLException ex) {
+                Alert alert = new Alert(Alert.AlertType.ERROR);
+                alert.setHeaderText("Unable to delete Task");
+                alert.setContentText(ex.getMessage());
+                alert.showAndWait();
                 ex.printStackTrace();
             }
         });
@@ -1899,12 +2556,24 @@ public class App extends Application {
                     .mapToInt(TaskStep::estimatedMinutes)
                     .sum();
 
-            return Math.max(task.getEstimatedMinutes(), allocated);
+            return allocated;
 
         } catch (SQLException ex) {
             ex.printStackTrace();
             return task.getEstimatedMinutes();
         }
+    }
+
+    private long suggestedAutoScheduleMinutes(
+            Task task,
+            TaskStep step) throws SQLException {
+
+        List<TaskStep> steps = taskStepRepository.findByTaskId(task.getId());
+
+        return AutoScheduleDuration.suggestedMinutes(
+                task,
+                step,
+                steps);
     }
 
     private boolean isTaskActuallyCompleted(Task task) {
@@ -1917,39 +2586,35 @@ public class App extends Application {
 
     private void updateProgress(List<Task> tasks, Label progressLabel, ProgressBar progressBar, String filter) {
 
-        int completedTasks = 0;
-        int totalTasks = 0;
+        DailyPlanRepository.DailySummary summary;
 
-        int plannedMinutes = 0;
-        int completedMinutes = 0;
-        int remainingMinutes = 0;
+        try {
+            summary = dailyPlanRepository.findByDate(LocalDate.now());
+        } catch (SQLException ex) {
+            ex.printStackTrace();
 
-        for (Task task : tasks) {
+            progressLabel.setText("Today's Plan: unable to load completion");
 
-            if (!matchesFilter(task, "Today")) {
-                continue;
-            }
-
-            totalTasks++;
-
-            int taskPlanned = getTaskPlannedMinutes(task);
-            int taskCompleted = getTaskCompletedMinutes(task);
-
-            plannedMinutes += taskPlanned;
-            completedMinutes += taskCompleted;
-            remainingMinutes += Math.max(0, taskPlanned - taskCompleted);
-
-            if (isTaskActuallyCompleted(task)) {
-                completedTasks++;
-            }
+            dailyProgressDetails.setText("Database read error");
+            progressBar.setProgress(0);
+            return;
         }
+
+        int plannedMinutes = summary.plannedMinutes();
+        int completedMinutes = summary.completedMinutes();
+
+        int totalTasks = summary.totalTasks();
+        int completedTasks = summary.completedTasks();
+
+        int remainingMinutes = Math.max(
+                0, plannedMinutes - completedMinutes);
 
         double progress = plannedMinutes == 0
                 ? 0.0
                 : (double) completedMinutes / plannedMinutes;
 
         progressLabel.setText(
-                "Today: " + Math.round(progress * 100) + "%"
+                "Today's Plan: " + Math.round(progress * 100) + "%"
                         + "  ·  " + completedMinutes + "/" + plannedMinutes
                         + " min");
 

@@ -10,7 +10,7 @@ $dist = Join-Path $root 'dist'
 $icon = Join-Path $root 'src\main\resources\icons\agenda-icon.ico'
 $portable = Join-Path $dist 'Day 8'
 
-$portableZip = Join-Path $dist 'Day8-v0.2.0-win-x64-portable.zip'
+$portableZip = Join-Path $dist 'Day8-v0.2.1-win-x64-portable.zip'
 
 if (-not $env:JAVA_HOME) {
     throw 'JAVA_HOME is not set. Point it to your JDK 25 installation.'
@@ -70,7 +70,7 @@ try {
     & $jpackage `
         --type app-image `
         --name 'Day 8' `
-        --app-version 0.2.0 `
+        --app-version 0.2.1 `
         --input $releaseInput `
         --main-jar $jar.Name `
         --main-class dev.personalagenda.Launcher `
@@ -92,7 +92,7 @@ try {
         & $jpackage `
             --type exe `
             --name PersonalAgenda `
-            --app-version 0.2.0 `
+            --app-version 0.2.1 `
             --app-image $portable `
             --dest $dist `
             --win-menu `
