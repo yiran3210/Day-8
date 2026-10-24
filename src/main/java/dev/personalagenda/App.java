@@ -613,7 +613,7 @@ public class App extends Application {
                                 + ": " + scheduledOnDate + " min"
                                 + " · All dates: " + scheduled + "/" + budget
                                 + " min"
-                                + " · Auto remaining: " + remaining + " min");
+                                + " · Auto duration: " + remaining + " min");
 
                 if (!autoEndInput.isSelected()) {
                     return;
@@ -621,8 +621,8 @@ public class App extends Application {
 
                 if (remaining <= 0) {
                     scheduleBudgetStatus.setText(
-                            "Estimated time fully scheduled. "
-                                    + "Turn off Auto end to add an extra slot.");
+                            "This Task or Step is completed, "
+                                    + "or has no unfinished estimated work.");
                     return;
                 }
 
@@ -763,8 +763,9 @@ public class App extends Application {
 
                     if (remaining <= 0) {
                         blockStatus.setText(
-                                "No estimated time remaining. "
-                                        + "Turn off Auto end for an additional slot.");
+                                "No unfinished estimated work for this selection. "
+                                        + "Choose an unfinished Task or Step, "
+                                        + "or turn off Auto end.");
                         return;
                     }
 
@@ -2570,19 +2571,33 @@ public class App extends Application {
             Task task,
             TaskStep step) throws SQLException {
 
-        long taskRemaining = (long) getTaskPlannedMinutes(task)
-                - blocks.sumScheduledMinutes(task.getId(), null);
-
-        if (step == null) {
-            return Math.max(0L, taskRemaining);
+        // Completed tasks have no work left to schedule.
+        if (task.isCompleted()) {
+            return 0L;
         }
 
-        long stepRemaining = (long) step.estimatedMinutes()
-                - blocks.sumScheduledMinutes(task.getId(), step.id());
+        // A specific Step is selected:
+        // ignore all previously scheduled time.
+        if (step != null) {
+            return step.completed()
+                    ? 0L
+                    : Math.max(0L, step.estimatedMinutes());
+        }
 
-        return Math.max(
-                0L,
-                Math.min(taskRemaining, stepRemaining));
+        // No specific Step selected:
+        // schedule the Task itself if it has no Steps.
+        List<TaskStep> steps = taskStepRepository.findByTaskId(task.getId());
+
+        if (steps.isEmpty()) {
+            return Math.max(0L, task.getEstimatedMinutes());
+        }
+
+        // For a Task with Steps, count only unfinished Steps.
+        // Historical scheduled blocks do not reduce this estimate.
+        return steps.stream()
+                .filter(s -> !s.completed())
+                .mapToLong(TaskStep::estimatedMinutes)
+                .sum();
     }
 
     private boolean isTaskActuallyCompleted(Task task) {
