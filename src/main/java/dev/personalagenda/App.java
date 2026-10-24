@@ -25,6 +25,7 @@ import dev.personalagenda.view.UiLayout;
 import dev.personalagenda.view.InsightsView;
 import dev.personalagenda.view.DataLocationDialog;
 import dev.personalagenda.service.FocusSessionService;
+import dev.personalagenda.service.AutoScheduleDuration;
 
 // import java.util.ArrayList;
 import java.util.List;
@@ -568,7 +569,7 @@ public class App extends Application {
         HBox nextDayRow = new HBox(8, nextDayInput);
         nextDayRow.setAlignment(Pos.CENTER_LEFT);
 
-        CheckBox autoEndInput = new CheckBox("Auto end from remaining estimate");
+        CheckBox autoEndInput = new CheckBox("Auto end from estimated duration");
 
         autoEndInput.getStyleClass().add("schedule-option");
         nextDayInput.getStyleClass().add("schedule-option");
@@ -598,8 +599,7 @@ public class App extends Application {
 
                 long budget = getTaskPlannedMinutes(task);
 
-                long remaining = remainingAutoScheduleMinutes(
-                        blockRepository,
+                long suggested = suggestedAutoScheduleMinutes(
                         task,
                         linkedStepInput.getValue());
 
@@ -611,25 +611,25 @@ public class App extends Application {
                 scheduleBudgetStatus.setText(
                         "On " + scheduleDateInput.getValue()
                                 + ": " + scheduledOnDate + " min"
-                                + " · All dates: " + scheduled + "/" + budget
-                                + " min"
-                                + " · Auto duration: " + remaining + " min");
+                                + " · Task history: " + scheduled + " min"
+                                + " · Task estimate: " + budget + " min"
+                                + " · Suggested: " + suggested + " min");
 
                 if (!autoEndInput.isSelected()) {
                     return;
                 }
 
-                if (remaining <= 0) {
+                if (suggested <= 0) {
                     scheduleBudgetStatus.setText(
-                            "This Task or Step is completed, "
-                                    + "or has no unfinished estimated work.");
+                            "No unfinished estimated work for this selection. "
+                                    + "Uncheck Auto end to enter a manual duration.");
                     return;
                 }
 
                 LocalDateTime start = scheduleDateInput.getValue().atTime(
                         LocalTime.parse(startTimeInput.getText().trim()));
 
-                LocalDateTime end = start.plusMinutes(remaining);
+                LocalDateTime end = start.plusMinutes(suggested);
 
                 endTimeInput.setText(end.toLocalTime().toString());
 
@@ -713,12 +713,6 @@ public class App extends Application {
                     end = end.plusDays(1);
                 }
 
-                if (!end.isAfter(start)) {
-                    blockStatus.setText(
-                            "End must be after start.");
-                    return;
-                }
-
                 String linkedTaskId = blockTypeInput.getValue() == TimeBlock.Type.TASK
                         && linkedTaskInput.getValue() != null
                                 ? linkedTaskInput.getValue().getId()
@@ -756,12 +750,11 @@ public class App extends Application {
 
                 if (autoEndInput.isSelected() && linkedTaskId != null) {
 
-                    long remaining = remainingAutoScheduleMinutes(
-                            blockRepository,
+                    long suggested = suggestedAutoScheduleMinutes(
                             linkedTaskInput.getValue(),
                             linkedStepInput.getValue());
 
-                    if (remaining <= 0) {
+                    if (suggested <= 0) {
                         blockStatus.setText(
                                 "No unfinished estimated work for this selection. "
                                         + "Choose an unfinished Task or Step, "
@@ -769,7 +762,12 @@ public class App extends Application {
                         return;
                     }
 
-                    end = start.plusMinutes(remaining);
+                    end = start.plusMinutes(suggested);
+                }
+
+                if (!end.isAfter(start)) {
+                    blockStatus.setText("End must be after start.");
+                    return;
                 }
 
                 String dstError = ScheduleTimeValidation.check(
@@ -2566,38 +2564,16 @@ public class App extends Application {
         }
     }
 
-    private long remainingAutoScheduleMinutes(
-            TimeBlockRepository blocks,
+    private long suggestedAutoScheduleMinutes(
             Task task,
             TaskStep step) throws SQLException {
 
-        // Completed tasks have no work left to schedule.
-        if (task.isCompleted()) {
-            return 0L;
-        }
-
-        // A specific Step is selected:
-        // ignore all previously scheduled time.
-        if (step != null) {
-            return step.completed()
-                    ? 0L
-                    : Math.max(0L, step.estimatedMinutes());
-        }
-
-        // No specific Step selected:
-        // schedule the Task itself if it has no Steps.
         List<TaskStep> steps = taskStepRepository.findByTaskId(task.getId());
 
-        if (steps.isEmpty()) {
-            return Math.max(0L, task.getEstimatedMinutes());
-        }
-
-        // For a Task with Steps, count only unfinished Steps.
-        // Historical scheduled blocks do not reduce this estimate.
-        return steps.stream()
-                .filter(s -> !s.completed())
-                .mapToLong(TaskStep::estimatedMinutes)
-                .sum();
+        return AutoScheduleDuration.suggestedMinutes(
+                task,
+                step,
+                steps);
     }
 
     private boolean isTaskActuallyCompleted(Task task) {
